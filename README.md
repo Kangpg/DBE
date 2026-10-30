@@ -2,7 +2,7 @@
 
 Windows MSVC C++ 빌드를 요청 PC와 여러 Worker에 배정하는 실험 프로젝트. 네이티브 wrapper, MSBuild Adapter, TLS Worker와 Visual Studio 확장 소스를 포함한다.
 
-**상태: 오류 수정과 Local 전용 성능 비교를 재개했다.** 긴 임시 object 경로를 수정하고 Local 전용 실행에 원래 MSVC PCH/MP를 보존했다. 합성 회귀 35개가 통과했다. 현재 프로젝트의 유효한 반복 성능 비교와 Hybrid 전체 성공은 아직 확인 중이며, 가속 달성을 주장하지 않는다. [벤치마크](docs/benchmark.md)를 참고한다.
+**상태: 오류 수정과 합성 회귀 검증 완료, 실제 프로젝트 최종 검증·성능 비교 대기.** 긴 임시 object 경로를 수정하고 Local 전용 실행에 원래 MSVC PCH/MP를 보존했다. 합성 회귀 35개가 통과했다. 다른 빌드가 진행 중이므로 사용자 요청으로 성능 측정을 보류했다. 유효한 반복 비교와 현재 프로젝트 Hybrid 전체 성공은 아직 확인하지 않았으며, 가속 달성을 주장하지 않는다. [벤치마크](docs/benchmark.md)를 참고한다.
 
 - [설치](docs/installation.md): 소스 빌드, Worker 패키지, VSIX.
 - [연결](docs/connection.md): 인증 pair, 여러 Worker, 솔루션 설정.

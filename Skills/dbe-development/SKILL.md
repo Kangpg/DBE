@@ -33,6 +33,8 @@ Use ordinary MSBuild verbosity; diagnostic verbosity can persist ambient environ
 
 Alternate native/Local order across fresh-output pairs and measure warm no-op separately. Do not overlap compiler tests with timing runs. Check input membership and content before/after; invalidate comparisons when inputs change. Publish only reviewed generalized results, never copy a private runner or raw receipt into Git.
 
+Detect other active builds before and during measurement, not just at session start. Stop only the measurement's captured owner/Job when overlap invalidates a run. Solution and direct-project entry points can resolve different references: keep both compared modes on the same verified entry point, state its scope, and never combine a failed fresh build with a later link-only diagnostic into a success time.
+
 ## UI and resource policy
 
 VSIX install success does not establish menu visibility. Verify resource/pkgdef registration, persistent configuration refresh and actual UI execution. Use UTF-8 for redirected output. Project commands preserve solution dependencies/configuration mapping and selected loaded C++ project. If automation flickers, stop repeated input and use user-assisted screenshots.

@@ -19,8 +19,8 @@
     },
     {
       "file": "docs/benchmark.md",
-      "bytes": 3831,
-      "sha256": "eeb4b81c8528e8ce99b3035acc4f28056f27b3ec52405c2e045b790c7321fbf1"
+      "bytes": 4732,
+      "sha256": "00b99c5a6e3f87c275e839ce3a0b2ecf455d7144a3731538b32c03392ebc6c07"
     },
     {
       "file": "docs/connection.md",
@@ -39,8 +39,8 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 4281,
-      "sha256": "b9ec5917ce964ccc723004ff12bc6249b3dd7467ff2cd0e934b6829a9772bfe1"
+      "bytes": 4694,
+      "sha256": "44b2d7221f7cc613c132ebb2371ee9b9321f17383979ed879f347e915d5f7207"
     },
     {
       "file": "docs/usage.md",
@@ -139,8 +139,8 @@
     },
     {
       "file": "README.md",
-      "bytes": 1805,
-      "sha256": "cb798ce86bb699f3c94fd2991db5168b5c2210b8af123966a95ccded601905a7"
+      "bytes": 1937,
+      "sha256": "23a1c19ef87679e8b0d666a56b4054fe3740199805bacb7867735e7a41069748"
     },
     {
       "file": "scripts/Allow-WorkerFirewall.ps1",
@@ -269,8 +269,8 @@
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 5765,
-      "sha256": "9d76a1483ba344b5849ab20ae2c74d98f70076a852b6a29cf2adbc854ac41109"
+      "bytes": 6175,
+      "sha256": "2a4dd98dd4547df082149303c1da4ac08c026872faf92c00161a43d085692e37"
     },
     {
       "file": "tests/child-probe.cpp",
