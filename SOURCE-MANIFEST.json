@@ -1,0 +1,431 @@
+{
+  "schemaVersion": 1,
+  "scope": "DBE source and generalized documentation only; no external-project inputs or logs",
+  "files": [
+    {
+      "file": ".gitattributes",
+      "bytes": 99,
+      "sha256": "dd61902f479a119875c983338680e41addf247ca01d97ab855fb2f0312effe7e"
+    },
+    {
+      "file": ".gitignore",
+      "bytes": 269,
+      "sha256": "a915def14fece00a9c80a9d884de87af6089cd912ad9e721b801b109d89e8008"
+    },
+    {
+      "file": "AGENTS.md",
+      "bytes": 1506,
+      "sha256": "7dd51a48602070205a9957ae6582d079daaad3055f07b7dd419eb9ee6f95c05b"
+    },
+    {
+      "file": "docs/benchmark.md",
+      "bytes": 2058,
+      "sha256": "69f08a6a1ea11163ca4003e1110c48a2dd0041d03dfb81ade435bf40ec6dfb68"
+    },
+    {
+      "file": "docs/connection.md",
+      "bytes": 2696,
+      "sha256": "87638cacb257413f6ef7a88d9c690791657ef7f549091e107832b112999c1e3c"
+    },
+    {
+      "file": "docs/design.md",
+      "bytes": 1684,
+      "sha256": "87919cd01d5a95bf8f1bff8ed82af2c61a02967373eb0f95a5f6ae7a16990673"
+    },
+    {
+      "file": "docs/installation.md",
+      "bytes": 2456,
+      "sha256": "04d3177305d2995f2caab8ff868230171dd40fe0c38db195eb8c4101df4099c2"
+    },
+    {
+      "file": "docs/issues.md",
+      "bytes": 3535,
+      "sha256": "100add07f75616be72b24bc974bd94c5ec53a1d591eabc7ed587e9313b04b7c4"
+    },
+    {
+      "file": "docs/usage.md",
+      "bytes": 2214,
+      "sha256": "0f525c758b377fcb3478b86f14d1722a6e34bd057f13fb2b70cf8ad757b57cd7"
+    },
+    {
+      "file": "docs/worker-install.md",
+      "bytes": 803,
+      "sha256": "6cfe7b129e25d6b4b3b7a110a526457f3ebf7616b32beb5e60a67e888f73d613"
+    },
+    {
+      "file": "fixture-remote/forced.h",
+      "bytes": 33,
+      "sha256": "173e82c7a87a079f257aa9eeb29f475dd45f2536c639b7b96c525bb412cd0a81"
+    },
+    {
+      "file": "fixture-remote/headers/value.h",
+      "bytes": 34,
+      "sha256": "4656dcae8e820bd155563117a8aa58e9d331b7d6c00154f385107d6461e0cce4"
+    },
+    {
+      "file": "fixture-remote/main.cpp",
+      "bytes": 58,
+      "sha256": "d5b1a27a92f5005e450f84abcee1e92d1de98d140fc60afd6ffb9ad3a31df5ff"
+    },
+    {
+      "file": "fixture-remote/remote-probe.sln",
+      "bytes": 876,
+      "sha256": "4445904ceb1e1b104f61ad0ae02e3e41ee3825942ea0cce4c97a63ef505b8e1b"
+    },
+    {
+      "file": "fixture-remote/remote-probe.vcxproj",
+      "bytes": 2891,
+      "sha256": "e55c69498a95345dea03d12d1d7dbec03cedc97f80de2c8ddfca0ab9fd0c45fb"
+    },
+    {
+      "file": "fixture-remote/value.cpp",
+      "bytes": 277,
+      "sha256": "36299db389d750b8bebf3a3d39604875187008d33d6a91264bca6b2828214884"
+    },
+    {
+      "file": "fixture/main.cpp",
+      "bytes": 68,
+      "sha256": "1f7185c838c8905b66da8f49bb0fdf5ac5923bccf5c38df6d444cd35fcf3e54d"
+    },
+    {
+      "file": "fixture/probe.vcxproj",
+      "bytes": 1552,
+      "sha256": "f4fd0b110539902177f1193984c94c0569ce3a6a56690fa6fb1adbaac0cec8ec"
+    },
+    {
+      "file": "fixture/value.h",
+      "bytes": 52,
+      "sha256": "7e9d31b4b1dbdedf0bb2b5e0d544d51c971679c950666d564de7b0c7dca34ca0"
+    },
+    {
+      "file": "msbuild/DBE.Local.targets",
+      "bytes": 845,
+      "sha256": "31ac4ec083299f523da270c86fce7523755ab7a488c5656ea319f426ffa842e4"
+    },
+    {
+      "file": "msbuild/DBE.Remote.targets",
+      "bytes": 5338,
+      "sha256": "f101ab07991863f9bf0e511de5034b0146329107a631644d3dd469e76191c7f7"
+    },
+    {
+      "file": "msbuild/DbeInputInventory.cs",
+      "bytes": 6493,
+      "sha256": "9789007e1619ecccfcb67d293526ff5f38b113231574d13559aa3fc1ff90c7aa"
+    },
+    {
+      "file": "native/build-host.cpp",
+      "bytes": 5062,
+      "sha256": "98778d5dff4739b12d2bb7c51b5033946c7d65be1bcf8c2eac00e9ef7b181620"
+    },
+    {
+      "file": "native/dbe-cl.cpp",
+      "bytes": 6052,
+      "sha256": "74d70b8ac93e40a04d309c651eda0a89b8ef80a06cabb29f72e6d75ff62e68d8"
+    },
+    {
+      "file": "native/dbe-cl.vcxproj",
+      "bytes": 1952,
+      "sha256": "46557899c125d20f4885eb7a8f11bc51bf13b5b8d1f444243c263099cf4de47b"
+    },
+    {
+      "file": "native/process-support.h",
+      "bytes": 1292,
+      "sha256": "5e5962a8d2e8f4b0f95129df45508530182d70b1b40c499251e040c4e8cc910b"
+    },
+    {
+      "file": "native/worker-process.cpp",
+      "bytes": 6620,
+      "sha256": "512e52ed964f909e8ab4fd373c1d4c44f79e1a0a487012811391a86b2a2e230e"
+    },
+    {
+      "file": "README.md",
+      "bytes": 1709,
+      "sha256": "c8b0240aab2ca206cdc9a7c62c30851534fa522240e35434ba068ced55105414"
+    },
+    {
+      "file": "scripts/Allow-WorkerFirewall.ps1",
+      "bytes": 1738,
+      "sha256": "c909fd04eeacd1cd523c371ad464856126932ac7ea25b8093929b7d903d1a4b6"
+    },
+    {
+      "file": "scripts/Build-VisualStudioExtension.ps1",
+      "bytes": 2738,
+      "sha256": "570f30e602f186849bb1c3aef25d5265b3a60a45463be90df1f8ddde217c7a98"
+    },
+    {
+      "file": "scripts/Build-Worker.ps1",
+      "bytes": 1590,
+      "sha256": "1a20b0c59c1574a929ee0e88ed0bc367550bb0373af206dfa8985452dd9b142d"
+    },
+    {
+      "file": "scripts/Build-Wrapper.ps1",
+      "bytes": 885,
+      "sha256": "bad538ee5adb381f2cf0642b59649a20f8caf87ca1de886906a5924b9dfa88df"
+    },
+    {
+      "file": "scripts/Get-BenchmarkProfile.ps1",
+      "bytes": 2804,
+      "sha256": "bb401325c842e03091fc53225654e110e231384378c3839dce778448021481ac"
+    },
+    {
+      "file": "scripts/Get-WorkerReadiness.ps1",
+      "bytes": 3756,
+      "sha256": "1d72d6cf1685cfc6110302405c6e34390b671541320110b6afa1cf8f776257d6"
+    },
+    {
+      "file": "scripts/Measure-RemoteMSBuild.ps1",
+      "bytes": 3100,
+      "sha256": "cd52b1dc6aa350fefa48fba4c99739302cfcee733a3608a5d4da16698d17a5b9"
+    },
+    {
+      "file": "scripts/Measure-Wrapper.ps1",
+      "bytes": 3762,
+      "sha256": "c488b6f35369c64e3b78efcfd591dd6357bc1c1d8636222fe5061369ad8272d0"
+    },
+    {
+      "file": "scripts/New-MSBuildAdapter.ps1",
+      "bytes": 3881,
+      "sha256": "b3cb5884b15a9623e5d9a9ed79f4dc7389d3321aaab9055985f95b7f456cd673"
+    },
+    {
+      "file": "scripts/Package-VisualStudioExtension.ps1",
+      "bytes": 1404,
+      "sha256": "b7b349966b49bd67c74acc711bdbe443bf73b50f72e7c7fba059eb10e3b0aad1"
+    },
+    {
+      "file": "scripts/Package-Worker.ps1",
+      "bytes": 2745,
+      "sha256": "32bd814055fdb92f415c47b0a95acf923558ccb1ce22753646b307418b351cd8"
+    },
+    {
+      "file": "scripts/Package-WorkerUpgrade.ps1",
+      "bytes": 2355,
+      "sha256": "abb9a4353466f285ca5cf4beb1e568d4e053f2e4c663e2bc9712b40fa4e1d95b"
+    },
+    {
+      "file": "scripts/Test-BuildHost.ps1",
+      "bytes": 5591,
+      "sha256": "167aeabdf580ad78cde88498c26c062e7bd9cc3fbedf3a54e36608a60c8a2b9f"
+    },
+    {
+      "file": "scripts/Test-CompilerProfiles.ps1",
+      "bytes": 12744,
+      "sha256": "c83c5cd1916d02866f8256afa053072a3081b23d8d8a6aa1be3787732ab3cde7"
+    },
+    {
+      "file": "scripts/Test-HybridIncremental.ps1",
+      "bytes": 3000,
+      "sha256": "3f977275c4a10e1756cb46d98ea622cca3f5f9b743b29bf9f39c3d533f92df4c"
+    },
+    {
+      "file": "scripts/Test-LocalBatchCancellation.ps1",
+      "bytes": 5064,
+      "sha256": "ac3b8e123f325fed6ab5899d9efdb13f9e251327ec38e17fca1dcc1e744683d4"
+    },
+    {
+      "file": "scripts/Test-MSBuildBaseline.ps1",
+      "bytes": 5407,
+      "sha256": "b6ff8ad863d3b28b727e6ee8269145e0250e0244e9ca1059f5e67255b0e924ad"
+    },
+    {
+      "file": "scripts/Test-RemoteMSBuild.ps1",
+      "bytes": 9022,
+      "sha256": "5f29f516cca21cd4c81a1506757ef1c2d102478dc324d48b7c2a27b3a6f80c2e"
+    },
+    {
+      "file": "scripts/Test-RemoteWorker.ps1",
+      "bytes": 6530,
+      "sha256": "b25b1befa8191f364a3ea63411179e56d88c92e484f4064d949a9a1cae23c9e9"
+    },
+    {
+      "file": "scripts/Test-VisualStudioProjectBuild.ps1",
+      "bytes": 5746,
+      "sha256": "650a1d35b855e1e87769a7a2a78f7af5f19e2baceebd176cb0a57a73a5f1b78c"
+    },
+    {
+      "file": "scripts/Test-VisualStudioRemote.ps1",
+      "bytes": 3595,
+      "sha256": "4b56c8984af1b7973182c0a9f5fdd376f269ae93a9fadb0fbfa89dccd37c9805"
+    },
+    {
+      "file": "scripts/Test-Worker.ps1",
+      "bytes": 1387,
+      "sha256": "f397de281136f203d8db9deccba86a5d113445676ba5bf007c4ddec94f31e1cf"
+    },
+    {
+      "file": "scripts/Test-WorkerPackage.ps1",
+      "bytes": 3670,
+      "sha256": "711272fd721d5036dfb524590d7dfe5db6308a816fd60d7fc656651aa15d57a9"
+    },
+    {
+      "file": "scripts/Test-Wrapper.ps1",
+      "bytes": 6972,
+      "sha256": "50f9eb5c3264a4a16e9636e017d1bd36b68b2d016f9eeae0bb39a321683c555b"
+    },
+    {
+      "file": "scripts/Toolchain.ps1",
+      "bytes": 1231,
+      "sha256": "55c54d4d346ebf6b542365d52b2350d7d891625f0f581fc9800a031339598a38"
+    },
+    {
+      "file": "Skills/dbe-development/SKILL.md",
+      "bytes": 4385,
+      "sha256": "f11f4d9d381ef73fa069bdabb570ac34497ae7feaba878507dc3587330402ace"
+    },
+    {
+      "file": "tests/child-probe.cpp",
+      "bytes": 2419,
+      "sha256": "00b4f153a5878a59ad21e5e0283ef685802d581b3d7059a34c9877a150600600"
+    },
+    {
+      "file": "tests/measure-process.cpp",
+      "bytes": 4623,
+      "sha256": "097ff8e6e6c2b9d43bb6a59157e2a1035a7f5d6983ef87b41ef9d653582c408e"
+    },
+    {
+      "file": "tests/worker-child.cpp",
+      "bytes": 1948,
+      "sha256": "e45b48591b64e0349b31f40cf9fd9524d524c7bf2a94877837e9270ab7c82b01"
+    },
+    {
+      "file": "vsix/AssemblyInfo.cs",
+      "bytes": 179,
+      "sha256": "9f1716e2c2cfc93a7e3f4996e98edeed409d467c4df32b704172639124040274"
+    },
+    {
+      "file": "vsix/Commands.vsct",
+      "bytes": 4162,
+      "sha256": "c3fcaaa2bceb2d67e115d47745c174f819c0410694190a32d106346fa83bfed7"
+    },
+    {
+      "file": "vsix/Dbe.VisualStudio.csproj",
+      "bytes": 4178,
+      "sha256": "b295acbb9783faed347ac430c535dc9d48828d642ac321e27a85e1d6f559f760"
+    },
+    {
+      "file": "vsix/DbePackage.cs",
+      "bytes": 12312,
+      "sha256": "3c9ba4ec17f07f531b7ba065e54ab629f66efba03c1afda18a305d148d1a7ed0"
+    },
+    {
+      "file": "vsix/ProjectTarget.cs",
+      "bytes": 1563,
+      "sha256": "18f3987d497f095ed2281b59a2375cf57ecdb57580fc4dce155841f1326731f4"
+    },
+    {
+      "file": "vsix/setup/Install-DBE.cmd",
+      "bytes": 258,
+      "sha256": "dcc9953d777c3f8dc5b114b25b6a9c5f3a1ea991934dd5e81926789b9d1429d9"
+    },
+    {
+      "file": "vsix/setup/Install-DBE.ps1",
+      "bytes": 4107,
+      "sha256": "a6ba92736da43bba5aff4b3e86df3ac9ac78673ccc6094748c87cd402270d178"
+    },
+    {
+      "file": "vsix/setup/README.txt",
+      "bytes": 1884,
+      "sha256": "0ee69c5d3c43db3888b8dfef11717f01ed2610913d4713761d981405cbb78ff4"
+    },
+    {
+      "file": "vsix/source.extension.vsixmanifest",
+      "bytes": 1179,
+      "sha256": "40a6ca2d6e711547844de688e912c2f24918da7832cc15a5ab02c0f07899cd1d"
+    },
+    {
+      "file": "vsix/VSPackage.resx",
+      "bytes": 550,
+      "sha256": "80c60f1b45d86e8e31165d8031fbf5398cb2c86c62d9f27cd1a74cb1b79ae269"
+    },
+    {
+      "file": "worker/BuildCancellation.cs",
+      "bytes": 1187,
+      "sha256": "be2de24314bf0cdc348e61e2d6a9b409d475025e848a3385e9ed82e7ae656a67"
+    },
+    {
+      "file": "worker/Client.cs",
+      "bytes": 5534,
+      "sha256": "b75b7a9e2f60c79831338f66c4ddd7686d7dd8aabd76c2b0cdb99d546fec8a0b"
+    },
+    {
+      "file": "worker/ClInvocation.cs",
+      "bytes": 8995,
+      "sha256": "452094f3bf1ed7f7be5c01a4bac2d1760b84590ee306cae1409316defbe5dd21"
+    },
+    {
+      "file": "worker/CompileOptions.cs",
+      "bytes": 2642,
+      "sha256": "14d42f391ad4cc6e2868af82bc0fcca8be5c262c8b6f2d531784294f22ebcac1"
+    },
+    {
+      "file": "worker/Compiler.cs",
+      "bytes": 4910,
+      "sha256": "f1861279e9985bb22ca28502d2d0e9762c6f6e87d50083d456de97e763b621a0"
+    },
+    {
+      "file": "worker/Dbe.Worker.csproj",
+      "bytes": 346,
+      "sha256": "f0714d983e75acf377fb3bb55c51650c856053af5021722e086187539e9124c7"
+    },
+    {
+      "file": "worker/Directory.Build.props",
+      "bytes": 389,
+      "sha256": "1377153802a0312c9dc3e443c419bf261f9ee1636896a549f73291c61daa2308"
+    },
+    {
+      "file": "worker/global.json",
+      "bytes": 55,
+      "sha256": "d1bb820bf074027be921b263729d1fba343d34328f0c4b7484d10162287c059e"
+    },
+    {
+      "file": "worker/HostScheduler.cs",
+      "bytes": 15568,
+      "sha256": "6a16fc1a7f8bec3632eebb2b4dc14331b8cfb21418e376b053a3c07942b91c3b"
+    },
+    {
+      "file": "worker/Identity.cs",
+      "bytes": 4472,
+      "sha256": "f5982f027e2d0545411233a3c602be0942f726a9f2a067639b93186903c23f40"
+    },
+    {
+      "file": "worker/LocalCompileBatch.cs",
+      "bytes": 5615,
+      "sha256": "6b3c82080a82db00b87a5e7513e950e6b9f442765aa77a6d8f016b81fb8eb39a"
+    },
+    {
+      "file": "worker/MsBuildAdapter.cs",
+      "bytes": 21657,
+      "sha256": "084e15357785a00480b6b30294f4d7265aec913e32437ea73e260adedad82405"
+    },
+    {
+      "file": "worker/PreparedInput.cs",
+      "bytes": 7592,
+      "sha256": "101a4819d2cb58b7ad137b7a0b7955048e840ee933e1b0646ea63cc65249a097"
+    },
+    {
+      "file": "worker/Program.cs",
+      "bytes": 5603,
+      "sha256": "b7b897cc7e3ab5e7888bdea90432901a25008693403bf2acb5110de6c039439f"
+    },
+    {
+      "file": "worker/Protocol.cs",
+      "bytes": 7806,
+      "sha256": "444d9df58c7313656d9c74f2c8d1b4c6ffc3038f7eb53878a4260e838f16941c"
+    },
+    {
+      "file": "worker/SchedulerSelfTest.cs",
+      "bytes": 13290,
+      "sha256": "f73cf42329622a8f7d32ca9d6bce40d498bffbf238dfc3ac1c5fc8046b4ab387"
+    },
+    {
+      "file": "worker/SelfTest.cs",
+      "bytes": 15548,
+      "sha256": "46bea85acebe1c5a70d70eab70fc3a8858edf313adb69cc59d0c266c7d584086"
+    },
+    {
+      "file": "worker/Worker.cs",
+      "bytes": 11002,
+      "sha256": "113671d01534ab6cebcea1905559a9b7058d9eaacbccf6caef5967aa4951eaaf"
+    }
+  ]
+}

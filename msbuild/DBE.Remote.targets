@@ -1,0 +1,62 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(DBEAdapterDirectory)\compiler.props" Condition="'$(DBEEnabled)' == 'true' And Exists('$(DBEAdapterDirectory)\compiler.props')" />
+  <UsingTask TaskName="DbeInputInventory" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <Task><Code Type="Class" Source="$(DBEAdapterDirectory)\DbeInputInventory.cs" /></Task>
+  </UsingTask>
+  <!-- Explicit project import after Microsoft.Cpp.targets. No global environment. -->
+  <PropertyGroup Condition="'$(DBEEnabled)' == 'true'">
+    <CLToolPath>$(DBEAdapterDirectory)</CLToolPath>
+    <CLToolExe>dbe-remote-cl.exe</CLToolExe>
+    <!-- This adapter exposes text diagnostics; local DBE.Local.targets still
+         preserves the native MSVC structured handle protocol. -->
+    <UseClStructuredOutput>false</UseClStructuredOutput>
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
+    <LinkToolPath Condition="'$(DBEHybrid)' == 'true'">$(DBEAdapterDirectory)</LinkToolPath>
+    <LinkToolExe Condition="'$(DBEHybrid)' == 'true'">dbe-link.exe</LinkToolExe>
+    <LIBToolPath Condition="'$(DBEHybrid)' == 'true'">$(DBEAdapterDirectory)</LIBToolPath>
+    <LIBToolExe Condition="'$(DBEHybrid)' == 'true'">dbe-lib.exe</LIBToolExe>
+    <DBEIncrementalTracking Condition="'$(DBEIncrementalTracking)' == '' And '$(DBEHybrid)' == 'true'">true</DBEIncrementalTracking>
+  </PropertyGroup>
+  <Target Name="DBEPrepareRemoteCompile" BeforeTargets="ClCompile" Condition="'$(DBEEnabled)' == 'true'">
+    <PropertyGroup><DBESelectedCompiler>$([System.IO.Path]::GetFullPath('$(VCToolsInstallDir)bin\Hostx64\x64\cl.exe'))</DBESelectedCompiler></PropertyGroup>
+    <Error Condition="!Exists('$(DBEAdapterDirectory)\dbe-remote-cl.exe') Or !Exists('$(DBEAdapterDirectory)\msbuild.json')" Text="DBEAdapterDirectory must contain the configured MSBuild adapter." />
+    <Error Condition="'$(Platform)' != 'x64'" Text="DBE remote adapter currently requires Platform=x64." />
+    <Error Condition="'$(PlatformToolset)' != 'v143'" Text="DBE remote adapter currently requires the explicitly configured v143 toolchain." />
+    <Error Condition="'$(DBEConfiguredCompiler)' == '' Or '$(DBESelectedCompiler)' != '$(DBEConfiguredCompiler)'" Text="The project-selected compiler differs from this adapter configuration. Create an adapter for the selected toolchain." />
+    <DbeInputInventory Condition="'$(DBEIncrementalTracking)' == 'true'" ProjectDirectory="$(MSBuildProjectDirectory)"
+        StateFile="$(IntDir)dbe-input-inventory.txt" Sources="@(ClCompile)" TrackerDirectory="$(TLogLocation)"
+        ObservedInputExclusions="$(ExcludePath);$(SystemRoot);$(windir);$([System.IO.Path]::GetDirectoryName('$(DBEConfiguredCompiler)'));$(DBERuntimeDirectories)"
+        SearchRoots="$(IncludePath);$(ExternalIncludePath);@(ClCompile->'%(AdditionalIncludeDirectories)');@(ClCompile->'%(ExternalIncludePath)')"
+        ExcludedRoots="$(IntDir);$(OutDir);$(DBEAdapterDirectory);$(DBEStateDirectory);$(DBELeaseDirectory)"
+        TrackedRuntimeRoots="$(DBEAdapterDirectory);$(DBEStateDirectory);$(DBELeaseDirectory)"
+        RuntimeInputs="$(DBEAdapterDirectory)\msbuild.json;$(DBEAdapterDirectory)\dbe-worker.dll;$(DBEAdapterDirectory)\DBE.Remote.targets;$(DBEAdapterDirectory)\DbeInputInventory.cs">
+      <Output TaskParameter="Changed" PropertyName="DBEInputMembershipChanged" />
+      <Output TaskParameter="Fingerprint" PropertyName="DBEInputFingerprint" />
+      <Output TaskParameter="TrackedExclusions" ItemName="DBETrackedExclusions" />
+    </DbeInputInventory>
+    <ItemGroup>
+      <ClCompile Update="@(ClCompile)">
+        <!-- Hybrid preserves native content/command tracking and invalidates
+             include membership changes. Other modes keep full revalidation. -->
+        <MinimalRebuildFromTracking Condition="'$(DBEIncrementalTracking)' != 'true' Or '$(DBEInputMembershipChanged)' == 'true'">false</MinimalRebuildFromTracking>
+        <ExcludedInputPaths>@(DBETrackedExclusions);%(ClCompile.ExcludedInputPaths)</ExcludedInputPaths>
+        <DeleteOutputBeforeExecute>false</DeleteOutputBeforeExecute>
+      </ClCompile>
+    </ItemGroup>
+  </Target>
+  <Target Name="DBECommitInputInventory" AfterTargets="ClCompile" Condition="'$(DBEEnabled)' == 'true' And '$(DBEIncrementalTracking)' == 'true' And '$(DBEInputFingerprint)' != ''">
+    <WriteLinesToFile File="$(IntDir)dbe-input-inventory.txt" Lines="$(DBEInputFingerprint)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup><FileWrites Include="$(IntDir)dbe-input-inventory.txt" /></ItemGroup>
+  </Target>
+  <Target Name="DBECollectCompilerSymbols" AfterTargets="ClCompile" BeforeTargets="Lib;Link" Condition="'$(DBEEnabled)' == 'true'">
+    <ItemGroup>
+      <DBECompilerSymbols Include="$(IntDir)dbe-*.pdb" />
+      <FileWrites Include="@(DBECompilerSymbols)" />
+    </ItemGroup>
+    <!-- Objects inside static libraries need their type-server PDB next to the
+         library when a dependent project links it. Names are unique attempts. -->
+    <Copy SourceFiles="@(DBECompilerSymbols)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="'@(DBECompilerSymbols)' != ''">
+      <Output TaskParameter="CopiedFiles" ItemName="FileWrites" />
+    </Copy>
+  </Target>
+</Project>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable">
+  <Extern href="stdidcmd.h"/><Extern href="vsshlids.h"/>
+  <Commands package="guidPackage">
+    <Menus><Menu guid="guidCommands" id="menu" priority="0x0900" type="Menu"><Parent guid="guidSHLMainMenu" id="IDG_VS_EXTENSIONS"/><Strings><ButtonText>DBE</ButtonText></Strings></Menu>
+      <Menu guid="guidCommands" id="toolbar" priority="0x1000" type="Toolbar"><CommandFlag>DefaultDocked</CommandFlag><Strings><ButtonText>DBE</ButtonText></Strings></Menu></Menus>
+    <Groups><Group guid="guidCommands" id="menuGroup" priority="0x0100"><Parent guid="guidCommands" id="menu"/></Group><Group guid="guidCommands" id="toolbarGroup" priority="0x0100"><Parent guid="guidCommands" id="toolbar"/></Group>
+      <Group guid="guidCommands" id="projectContextGroup" priority="0x0150"><Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_PROJNODE"/></Group>
+    </Groups>
+    <Buttons>
+      <Button guid="guidCommands" id="build" priority="0x0100" type="Button"><Parent guid="guidCommands" id="menuGroup"/><CommandFlag>TextOnly</CommandFlag><Strings><ButtonText>DBE 솔루션 빌드</ButtonText><CommandName>DBE.BuildSolution</CommandName></Strings></Button>
+      <Button guid="guidCommands" id="rebuild" priority="0x0200" type="Button"><Parent guid="guidCommands" id="menuGroup"/><CommandFlag>TextOnly</CommandFlag><Strings><ButtonText>DBE 솔루션 다시 빌드</ButtonText><CommandName>DBE.RebuildSolution</CommandName></Strings></Button>
+      <Button guid="guidCommands" id="cancel" priority="0x0300" type="Button"><Parent guid="guidCommands" id="menuGroup"/><CommandFlag>TextOnly</CommandFlag><Strings><ButtonText>DBE 빌드 취소</ButtonText><CommandName>DBE.CancelBuild</CommandName></Strings></Button>
+      <Button guid="guidCommands" id="buildProject" priority="0x0080" type="Button"><Parent guid="guidCommands" id="menuGroup"/><CommandFlag>TextOnly</CommandFlag><Strings><ButtonText>DBE 프로젝트 빌드</ButtonText><CommandName>DBE.BuildProject</CommandName></Strings></Button>
+      <Button guid="guidCommands" id="rebuildProject" priority="0x0090" type="Button"><Parent guid="guidCommands" id="menuGroup"/><CommandFlag>TextOnly</CommandFlag><Strings><ButtonText>DBE 프로젝트 다시 빌드</ButtonText><CommandName>DBE.RebuildProject</CommandName></Strings></Button>
+    </Buttons>
+  </Commands>
+  <CommandPlacements>
+    <CommandPlacement guid="guidCommands" id="build" priority="0x0100"><Parent guid="guidCommands" id="toolbarGroup"/></CommandPlacement>
+    <CommandPlacement guid="guidCommands" id="cancel" priority="0x0200"><Parent guid="guidCommands" id="toolbarGroup"/></CommandPlacement>
+    <CommandPlacement guid="guidCommands" id="buildProject" priority="0x0080"><Parent guid="guidCommands" id="toolbarGroup"/></CommandPlacement>
+    <CommandPlacement guid="guidCommands" id="buildProject" priority="0x0100"><Parent guid="guidCommands" id="projectContextGroup"/></CommandPlacement>
+    <CommandPlacement guid="guidCommands" id="rebuildProject" priority="0x0200"><Parent guid="guidCommands" id="projectContextGroup"/></CommandPlacement>
+    <CommandPlacement guid="guidCommands" id="buildProject" priority="0x0300"><Parent guid="guidSHLMainMenu" id="IDG_VS_BUILD_SELECTION"/></CommandPlacement>
+    <CommandPlacement guid="guidCommands" id="rebuildProject" priority="0x0310"><Parent guid="guidSHLMainMenu" id="IDG_VS_BUILD_SELECTION"/></CommandPlacement>
+  </CommandPlacements>
+  <Symbols><GuidSymbol name="guidPackage" value="{f55fa185-f0aa-4913-9cfb-9a64b547b9f1}"/><GuidSymbol name="guidCommands" value="{a4b34f17-39f5-4cfa-993b-ae0acec8ebc7}"><IDSymbol name="menu" value="0x1000"/><IDSymbol name="toolbar" value="0x1001"/><IDSymbol name="menuGroup" value="0x1010"/><IDSymbol name="toolbarGroup" value="0x1011"/><IDSymbol name="projectContextGroup" value="0x1012"/><IDSymbol name="build" value="0x0100"/><IDSymbol name="rebuild" value="0x0101"/><IDSymbol name="cancel" value="0x0102"/><IDSymbol name="buildProject" value="0x0103"/><IDSymbol name="rebuildProject" value="0x0104"/></GuidSymbol></Symbols>
+</CommandTable>

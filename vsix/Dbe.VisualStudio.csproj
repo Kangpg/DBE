@@ -1,0 +1,42 @@
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion><VisualStudioVersion>17.0</VisualStudioVersion>
+    <VSToolsPath>$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v17.0</VSToolsPath>
+    <AssemblyName>Dbe.VisualStudio</AssemblyName><RootNamespace>Dbe.VisualStudio</RootNamespace>
+    <ProjectGuid>{f55fa185-f0aa-4913-9cfb-9a64b547b9f1}</ProjectGuid>
+    <ProjectTypeGuids>{82b43b9b-a64c-4715-b499-d71e9ca2bd60};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <OutputType>Library</OutputType><TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion><LangVersion>latest</LangVersion>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration><Platform>AnyCPU</Platform>
+    <OutputPath>..\out\vsix-build\</OutputPath><BaseIntermediateOutputPath>..\out\vsix-obj\</BaseIntermediateOutputPath>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile><UseCodebase>true</UseCodebase><IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <DeployExtension>false</DeployExtension><DebugType>pdbonly</DebugType><Optimize>true</Optimize>
+    <VSAssemblyPath>$(VSInstallDir)Common7\IDE\PublicAssemblies</VSAssemblyPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System"/><Reference Include="System.Core"/><Reference Include="System.Runtime.Serialization"/><Reference Include="System.Xml"/>
+    <Reference Include="System.Design"/><Reference Include="System.Windows.Forms"/>
+    <Reference Include="Microsoft.VisualStudio.Shell.15.0"><HintPath>$(VSAssemblyPath)\Microsoft.VisualStudio.Shell.15.0.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Framework"><HintPath>$(VSAssemblyPath)\Microsoft.VisualStudio.Shell.Framework.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.VisualStudio.Utilities"><HintPath>$(VSInstallDir)Common7\IDE\Microsoft.VisualStudio.Utilities.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.VisualStudio.Interop"><HintPath>$(VSAssemblyPath)\Microsoft.VisualStudio.Interop.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Interop"><HintPath>$(VSAssemblyPath)\Microsoft.VisualStudio.Shell.Interop.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Interop.8.0"><HintPath>$(VSAssemblyPath)\Microsoft.VisualStudio.Shell.Interop.8.0.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.VisualStudio.Threading"><HintPath>$(VSAssemblyPath)\Microsoft.VisualStudio.Threading.17.x\Microsoft.VisualStudio.Threading.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="EnvDTE"><HintPath>$(VSAssemblyPath)\envdte.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="EnvDTE80"><HintPath>$(VSAssemblyPath)\envdte80.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="DbePackage.cs"/><Compile Include="ProjectTarget.cs"/><Compile Include="AssemblyInfo.cs"/>
+    <VSCTCompile Include="Commands.vsct"><ResourceName>Menus.ctmenu</ResourceName></VSCTCompile>
+    <EmbeddedResource Include="VSPackage.resx"><MergeWithCTO>true</MergeWithCTO><LogicalName>VSPackage.resources</LogicalName></EmbeddedResource>
+    <None Include="source.extension.vsixmanifest"/>
+    <Content Include="$(DBEBuildHostPath)"><Link>dbe-build-host.exe</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory><IncludeInVSIX>true</IncludeInVSIX></Content>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
+  <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets"/>
+  <!-- The installed SDK task retains an existing intermediate manifest. Regenerate this
+       owned output so edits to version, compatibility and assets reach the VSIX. -->
+  <Target Name="RefreshDbeVsixManifest" BeforeTargets="DetokenizeVsixManifestFile">
+    <Delete Files="$(IntermediateVsixManifest)" />
+  </Target>
+</Project>

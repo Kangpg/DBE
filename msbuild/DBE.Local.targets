@@ -1,0 +1,11 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Explicit opt-in after Microsoft.Cpp.targets. No machine-wide changes. -->
+  <PropertyGroup Condition="'$(DBEEnabled)' == 'true'">
+    <CLToolPath>$(DBEWrapperDirectory)</CLToolPath>
+    <CLToolExe>dbe-cl.exe</CLToolExe>
+  </PropertyGroup>
+  <Target Name="DBEValidateLocalWrapper" BeforeTargets="ClCompile" Condition="'$(DBEEnabled)' == 'true'">
+    <Error Condition="'$(DBEWrapperDirectory)' == '' Or !Exists('$(DBEWrapperDirectory)\dbe-cl.exe')" Text="DBEWrapperDirectory must contain dbe-cl.exe." />
+    <Error Condition="'$(DBE_REAL_CL)' == '' Or !Exists('$(DBE_REAL_CL)')" Text="Set the DBE_REAL_CL environment variable to the selected toolchain's absolute cl.exe path before starting MSBuild; an MSBuild property alone is insufficient." />
+  </Target>
+</Project>
