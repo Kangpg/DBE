@@ -33,7 +33,7 @@ static partial class MsBuildAdapter
         if (config.Mode != "Hybrid" && config.AdditionalClients is { Length: > 0 }) throw new Rejected("Multiple Workers require Hybrid mode");
         using var scheduler = config.Mode == "Hybrid" ? new HostScheduler(config.HostPolicy ?? throw new Rejected("Hybrid requires a shared host policy"), config.Clients) : null;
         string raw = ClInvocation.RawTail();
-        if (config.Mode == "Local") return Local(config, raw, "Local mode", token);
+        if (config.Mode == "Local") throw new Rejected("Local mode requires the native launcher; create a fresh Local adapter");
         ClInvocation[] batch;
         try
         {
@@ -62,7 +62,7 @@ static partial class MsBuildAdapter
                 while (indices.Count < placement.SlotCost * 4 && pending.TryDequeue(out int next)) indices.Add(next);
             if (indices.Count == 1) results[index] = await RunOne(config, root, invocation, ct, scheduler, placement, compiler);
             else {
-                int result = await CompileLocalBatch(config, root, indices.Select(i => batch[i]).ToArray(), placement!, scheduler!, ct);
+                int result = await CompileLocalBatch(config, root, indices.Select(i => batch[i]).ToArray(), placement!, ct);
                 foreach (int i in indices) results[i] = result;
             }
             }
@@ -87,12 +87,12 @@ static partial class MsBuildAdapter
             {
                 Console.WriteLine("DBE: fallback " + invocation.Source + ": " + reason);
                 using var local = await scheduler.AcquireLocalFallback(placement!, invocation.Source, token, invocation.CompilerPdb);
-                return await CompileLocal(config, invocation, attemptRoot, objectState, attempt, local, scheduler, token, "fallback");
+                return await CompileLocal(config, root, invocation, attemptRoot, objectState, local, scheduler, token, "fallback");
             }
             if (config.Mode == "Auto") DeleteObject(invocation.Object);
             return await Fallback(config, raw, reason, token, scheduler);
         }
-        if (placement is { IsLocal: true }) return await CompileLocal(config, invocation, attemptRoot, objectState, attempt, placement, scheduler!, token);
+        if (placement is { IsLocal: true }) return await CompileLocal(config, root, invocation, attemptRoot, objectState, placement, scheduler!, token);
         string preprocessSource;
         try { preprocessSource = PreparedInput.PrepareSource(invocation, attemptRoot); }
         catch (Exception e) when (e is UnsupportedCompile or DecoderFallbackException or EncoderFallbackException)
@@ -210,18 +210,19 @@ static partial class MsBuildAdapter
         return 0;
     }
 
-    private static async Task<int> CompileLocal(AdapterConfig config, ClInvocation invocation, string attemptRoot, string objectState, string attempt,
+    private static async Task<int> CompileLocal(AdapterConfig config, string root, ClInvocation invocation, string attemptRoot, string objectState,
         HostScheduler.Lease placement, HostScheduler scheduler, CancellationToken token, string kind = "local")
     {
         Directory.CreateDirectory(Path.GetDirectoryName(invocation.Object)!);
-        string pending = invocation.Object + ".dbe-" + attempt;
+        using var output = new LocalOutput(config, root, attemptRoot, new[] { "result.obj" });
+        string pending = Path.Combine(output.Root, "result.obj");
         var options = LocalCommand(invocation, pending, 1, new[] { invocation.Source });
         string response = Path.Combine(attemptRoot, "scheduled-local.rsp");
         File.WriteAllText(response, string.Join(' ', options.Select(ClInvocation.Quote)), Encoding.Unicode);
         Event(attemptRoot, kind + "-running", invocation, Environment.MachineName);
         try
         {
-            Execution result = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, placement, scheduler.Policy.LocalMemoryMiB);
+            Execution result = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, placement, scheduler.Policy.LocalMemoryMiB, output);
             Emit(result);
             if (result.Kind != 0 || result.ExitCode != 0)
             {
@@ -232,14 +233,13 @@ static partial class MsBuildAdapter
             }
             token.ThrowIfCancellationRequested();
             if (!File.Exists(pending)) throw new Rejected("Local compiler produced no object");
-            File.Move(pending, invocation.Object, true);
+            output.Publish("result.obj", invocation.Object);
             File.Delete(Path.Combine(objectState, "object.json")); // A previous remote reuse record is no longer authoritative.
             Record(attemptRoot, kind + "-completed", invocation, null, null);
             Event(attemptRoot, kind + "-completed", invocation, Environment.MachineName);
             return 0;
         }
         catch { DeleteObject(invocation.Object); throw; }
-        finally { if (File.Exists(pending)) File.Delete(pending); }
     }
     private static void Event(string root, string status, ClInvocation invocation, string machine)
     {
@@ -247,16 +247,18 @@ static partial class MsBuildAdapter
         File.WriteAllText(Path.Combine(root, status + ".json"), JsonSerializer.Serialize(value, Wire.Json));
         Console.WriteLine($"DBE: {status} {machine} {invocation.Source}");
     }
-    private static Execution Execute(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory)
+    private static Execution Execute(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory, LocalOutput? output = null)
     {
         token.ThrowIfCancellationRequested();
+        output?.BeginExecution();
         lease?.BeginExecution();
         Execution result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, 120, lease?.MemoryMiB ?? memory, token, true);
+        output?.CompleteExecution(result);
         if (result.Kind != 5) lease?.ConfirmCleanup();
         return result;
     }
-    private static Task<Execution> ExecuteAsync(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory) =>
-        Task.Factory.StartNew(() => Execute(config, raw, token, lease, memory), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    private static Task<Execution> ExecuteAsync(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory, LocalOutput? output = null) =>
+        Task.Factory.StartNew(() => Execute(config, raw, token, lease, memory, output), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     private static async Task<int> LocalBounded(AdapterConfig config, string raw, string reason, CancellationToken token, HostScheduler? scheduler)
     {
         if (scheduler is null) return Local(config, raw, reason, token);

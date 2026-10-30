@@ -4,6 +4,57 @@ namespace Dbe;
 
 static partial class MsBuildAdapter
 {
+    // Compiler outputs must not inherit the per-object hash/attempt nesting.
+    // MSVC's MP output path fails beyond MAX_PATH even with a \\?\ prefix.
+    // Keep metadata in the attempt, but own one shallow output directory for
+    // the complete native job. An unconfirmed job retains its marker/output.
+    private sealed class LocalOutput : IDisposable
+    {
+        internal string Root { get; }
+        private readonly string id = Guid.NewGuid().ToString("N");
+        private readonly FileStream marker;
+        private bool cleanupConfirmed = true;
+        internal LocalOutput(AdapterConfig config, string root, string attemptRoot, IEnumerable<string> names)
+        {
+            Root = Path.GetFullPath(Path.Combine(root, config.StateDirectory, "local", id));
+            foreach (string name in names)
+                if (Path.Combine(Root, name).Length >= 260)
+                    throw new Rejected("Local compiler output exceeds the MSVC path limit; select a shorter stateDirectory");
+            Wire.NoReparse(Root);
+            if (Directory.Exists(Root)) throw new Rejected("Local output directory already exists");
+            Directory.CreateDirectory(Root);
+            marker = new FileStream(Path.Combine(Root, ".owner"), FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            try
+            {
+                marker.Write(Encoding.UTF8.GetBytes(id + "\n" + attemptRoot)); marker.Flush(true);
+                File.WriteAllText(Path.Combine(attemptRoot, "local-output.json"),
+                    System.Text.Json.JsonSerializer.Serialize(new { id, path = Root }, Wire.Json));
+            }
+            catch { marker.Dispose(); throw; }
+        }
+        internal void BeginExecution() => cleanupConfirmed = false;
+        internal void CompleteExecution(Execution result) => cleanupConfirmed = result.Kind != 5;
+        internal void Publish(string name, string destination)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            // Copy across volumes if necessary, then rename on the destination
+            // volume. A fixed temporary basename avoids extending long names.
+            string pending = Path.Combine(Path.GetDirectoryName(destination)!, ".dbe-" + id + ".obj");
+            Wire.NoReparse(pending); Wire.NoReparse(destination);
+            bool copied = false;
+            try
+            {
+                File.Copy(Path.Combine(Root, name), pending, false); copied = true;
+                File.Move(pending, destination, true);
+            }
+            finally { if (copied && File.Exists(pending)) File.Delete(pending); }
+        }
+        public void Dispose()
+        {
+            marker.Dispose();
+            if (cleanupConfirmed) { Wire.NoReparse(Root); Directory.Delete(Root, true); }
+        }
+    }
     private sealed record OwnedAttempt(string ObjectState, string Root, string Id, FileStream Ownership) : IDisposable
     {
         public void Dispose() => Ownership.Dispose();
@@ -40,7 +91,7 @@ static partial class MsBuildAdapter
         options.AddRange(["/MP" + slots, "/Fo" + output]); options.AddRange(sources); return options;
     }
     private static async Task<int> CompileLocalBatch(AdapterConfig config, string root, ClInvocation[] sources,
-        HostScheduler.Lease placement, HostScheduler scheduler, CancellationToken token)
+        HostScheduler.Lease placement, CancellationToken token)
     {
         // One native job and one exclusive compiler-PDB lease own the whole MP
         // group. Independent jobs must not kill a shared MSPDBSRV underneath
@@ -49,13 +100,14 @@ static partial class MsBuildAdapter
         try
         {
             foreach (var source in sources) attempts.Add(CreateAttempt(config, root, source));
-            string staging = Path.Combine(attempts[0].Root, "batch-output"); Directory.CreateDirectory(staging);
+            using var output = new LocalOutput(config, root, attempts[0].Root, sources.Select(x => Path.GetFileName(x.Object)));
+            string staging = output.Root;
             string response = Path.Combine(attempts[0].Root, "scheduled-batch.rsp");
             File.WriteAllText(response, string.Join(' ', LocalCommand(sources[0], staging + Path.DirectorySeparatorChar,
                 placement.SlotCost, sources.Select(x => x.Source)).Select(ClInvocation.Quote)), Encoding.Unicode);
             for (int i = 0; i < sources.Length; i++) Event(attempts[i].Root, "local-batch-running", sources[i], Environment.MachineName);
             var result = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, placement,
-                placement.MemoryMiB);
+                placement.MemoryMiB, output);
             Emit(result);
             if (result.Kind != 0 || result.ExitCode != 0)
             {
@@ -73,16 +125,7 @@ static partial class MsBuildAdapter
             for (int i = 0; i < sources.Length; i++)
             {
                 token.ThrowIfCancellationRequested();
-                Directory.CreateDirectory(Path.GetDirectoryName(sources[i].Object)!);
-                string pending = sources[i].Object + ".dbe-" + attempts[i].Id;
-                try
-                {
-                    // State and project may be on different volumes. Stage
-                    // beside the object before its atomic publication.
-                    File.Move(Path.Combine(staging, Path.GetFileName(sources[i].Object)), pending);
-                    File.Move(pending, sources[i].Object, true);
-                }
-                finally { if (File.Exists(pending)) File.Delete(pending); }
+                output.Publish(Path.GetFileName(sources[i].Object), sources[i].Object);
                 File.Delete(Path.Combine(attempts[i].ObjectState, "object.json"));
                 Record(attempts[i].Root, "local-completed", sources[i], null, null);
                 Event(attempts[i].Root, "local-completed", sources[i], Environment.MachineName);

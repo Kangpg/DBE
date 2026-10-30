@@ -69,6 +69,21 @@ New-Item -ItemType HardLink -Path $alias -Target $wrapper | Out-Null
 if ((Invoke-Child $wrapper '' $alias).Code -ne 125) { throw 'Hardlink recursion was not rejected.' }
 $checks.Add('hardlink-recursion-rejected')
 
+# Packaged Local adapters select their compiler without modifying the caller's
+# environment. A present but invalid sidecar must never fall back to that env.
+$sidecar = [IO.Path]::ChangeExtension($wrapper, '.compiler')
+try {
+    [IO.File]::WriteAllText($sidecar, $probe, [Text.Encoding]::Unicode)
+    Assert-Equivalent (Invoke-Child $probe $raw $wrapper) (Invoke-Child $wrapper $raw $wrapper) 'sidecar-preserves-arguments-and-overrides-environment'
+    foreach ($invalid in @('relative.exe', $wrapper, $alias, ($probe + [char]0))) {
+        [IO.File]::WriteAllText($sidecar, $invalid, [Text.Encoding]::Unicode)
+        if ((Invoke-Child $wrapper '' $probe).Code -ne 125) { throw 'Invalid sidecar fell back to environment.' }
+    }
+    [IO.File]::WriteAllBytes($sidecar, [byte[]]@(65, 0, 66))
+    if ((Invoke-Child $wrapper '' $probe).Code -ne 125) { throw 'Malformed sidecar was accepted.' }
+    $checks.Add('sidecar-invalid-path-identity-and-encoding-rejected')
+} finally { Remove-Item -LiteralPath $sidecar -ErrorAction SilentlyContinue }
+
 # Compile UTF-16 response file with relative Unicode source/output paths. This
 # requires no SDK includes, so no shell environment setup is needed.
 $source = Join-Path $run '한글 소스.cpp'
@@ -88,7 +103,8 @@ Assert-Equivalent $directError (Invoke-Child $wrapper '@"compile args.rsp"' $too
 
 # Hold process handles while children are alive: post-cancellation observations
 # use these handles, never a potentially reused PID. Kill only our wrapper.
-$owner = Start-Child $wrapper '--linger' $probe
+[IO.File]::WriteAllText($sidecar, $probe, [Text.Encoding]::Unicode)
+$owner = Start-Child $wrapper '--linger' ''
 $child = $null; $grandchild = $null
 try {
     $ready = $owner.StandardOutput.ReadLineAsync()
@@ -96,6 +112,11 @@ try {
     $child = [Diagnostics.Process]::GetProcessById([int]$Matches[1])
     $grandchild = [Diagnostics.Process]::GetProcessById([int]$Matches[2])
     $null = $child.Handle; $null = $grandchild.Handle
+    $replace = $null
+    try { $replace = [IO.File]::Open($sidecar, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite) }
+    catch [IO.IOException] { }
+    if ($replace) { $replace.Dispose(); throw 'Active compiler sidecar was not pinned.' }
+    $checks.Add('sidecar-pinned-through-child-lifetime')
     $owner.Kill()
     if (!$owner.WaitForExit(5000) -or !$child.WaitForExit(5000) -or !$grandchild.WaitForExit(5000)) { throw 'Wrapper cancellation left descendants alive.' }
     $checks.Add('forced-wrapper-exit-cleans-child-and-grandchild')
@@ -104,6 +125,7 @@ try {
     $owner.Dispose()
     if ($child) { $child.Dispose() }
     if ($grandchild) { $grandchild.Dispose() }
+    Remove-Item -LiteralPath $sidecar
 }
 $result = [pscustomobject]@{ visualStudio=$VisualStudio; compiler=$tools.Compiler; checks=$checks.ToArray(); limitations=@('Forced termination tested; interactive Visual Studio Stop Build and console Ctrl+C are not covered here.'); output=$run }
 $result | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $run 'result.json') -Encoding utf8

@@ -1,6 +1,6 @@
 # 이슈 추적
 
-개발은 일시 중단 상태다. 기록은 DBE의 일반적인 현상과 완료 조건으로 제한한다.
+오류 수정과 native 로컬 처리량 비교를 재개했다. 기록은 DBE의 일반적인 현상과 완료 조건으로 제한한다.
 
 ## 열린 작업
 
@@ -15,11 +15,13 @@
 
 ### DBE-001 · P0 · MP staging 오류 재현
 
-C1083/D8040 실패를 합성 입력으로 재현한다. 경로 길이, Job 메모리/프로세스 한도를 구분하고 원자적 publication과 취소 정리를 유지한다. 완료 조건: 긴/한글 경로, 오류/취소 회귀와 현재 프로젝트 전체 성공. 경로 원인은 아직 확정하지 않았다.
+C1083/D8040을 실제 MSVC의 긴 object 출력 경로로 재현했다. hash/attempt metadata와 compiler 출력 폴더를 분리하고, 짧은 staging에서 목적지 볼륨의 원자적 publication으로 전환했다. 최신 합성 PCH/PDB·긴 파일명 검사와 실제 MP 자식 취소·정리가 통과했다. 현재 프로젝트 전체 Hybrid 성공을 확인한 뒤 닫는다.
 
 ### DBE-002 · P1 · native 로컬 처리량 동등성
 
 동일 PCH/MP/옵션의 native 대 DBE Local 전용 비교로 batch 분할과 입장 제어 비용을 분리한다. 완료 조건: 일반 앱 유지, 반복 성공 시간·CPU·peak commit·no-op 비교.
+
+Local 전용을 native wrapper로 전환해 원래 PCH/MP를 보존하고 Worker용 고정 한도를 제거했다. MSBuild 실패 object 정리와 증분 빌드도 검증했다. 입력 변경 및 외부 빌드 중첩이 발견된 측정은 무효 처리했다. 고정 입력과 빌드 중첩이 없는 구간에서 반복 비교가 남아 있다.
 
 ### DBE-003 · P1 · 원격 입력 비용과 단계별 계측
 
@@ -43,7 +45,7 @@ compiler 버전/identity와 실제 queue/receive/compile/return 상태를 표시
 
 ### DBE-008 · P2 · 새 머신 설치 재현
 
-도구 선택과 preflight를 정리하고 새 환경에서 문서만으로 build→pair→Worker→VSIX→합성 fixture를 검증한다. 현재 문서/구문 검사만으로 새 머신 설치 성공을 주장하지 않는다.
+도구 선택과 preflight를 정리하고 새 환경에서 문서만으로 build→pair→Worker→VSIX→합성 fixture를 검증한다. 사용자 목표는 프로젝트 파일·컴파일 옵션·PCH를 변경하지 않고 설치 후 빌드 명령을 사용하는 것이다. compiler/configuration 자동 탐색과 설치 과정의 Worker 연결을 통해 반복적인 수동 경로 설정을 없앤다. 현재 문서/구문 검사만으로 새 머신 설치 성공이나 이 사용 흐름의 완성을 주장하지 않는다.
 
 ## 해결 이력
 

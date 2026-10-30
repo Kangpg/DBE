@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$PublishDirectory,[string]$RemoteClientConfig,[string]$HybridPolicy,[string[]]$AdditionalClients=@())
+param([Parameter(Mandatory)][string]$PublishDirectory,[string]$RemoteClientConfig,[string]$HybridPolicy,[string[]]$AdditionalClients=@(),[switch]$LongOutputNames)
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'Toolchain.ps1')
@@ -25,7 +25,8 @@ try {
     for($i=0;$i -lt 30;$i++){ & $exe info $clientConfig *> (Join-Path $run 'info.json');if($LASTEXITCODE -eq 0){$ready=$true;break};if(!$worker -or $worker.HasExited){throw 'Worker unavailable'};Start-Sleep -Milliseconds 100 }
     if(!$ready){throw 'Worker did not become ready'}
     $mode=if($HybridPolicy){'Hybrid'}else{'Distributed'}
-    $adapter=& (Join-Path $PSScriptRoot 'New-MSBuildAdapter.ps1') -Destination (Join-Path $run 'adapter') -ClientConfig $clientConfig -PublishDirectory $publish -Mode $mode -HostPolicy $HybridPolicy -AdditionalClients $AdditionalClients
+    $state=Join-Path $root ('out\s-'+[Guid]::NewGuid().ToString('N'))
+    $adapter=& (Join-Path $PSScriptRoot 'New-MSBuildAdapter.ps1') -Destination (Join-Path $run 'adapter') -ClientConfig $clientConfig -PublishDirectory $publish -Mode $mode -HostPolicy $HybridPolicy -AdditionalClients $AdditionalClients -StateDirectory $state
     $projectRoot=Join-Path $run 'project';New-Item -ItemType Directory -Path $projectRoot|Out-Null
     Copy-Item -Path (Join-Path $root 'fixture-remote\*') -Destination $projectRoot -Recurse
     $settings=[xml]'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><DBEEnabled>true</DBEEnabled><DBEAdapterDirectory /></PropertyGroup></Project>'
@@ -61,7 +62,8 @@ try {
         $policy=Get-Content $HybridPolicy -Raw|ConvertFrom-Json
         if($policy.PSObject.Properties.Name -contains 'localBatchSlots' -and $policy.localBatchSlots -gt 1){
             foreach($i in 1..16){
-                $name="local-batch-$i.cpp";[IO.File]::WriteAllText((Join-Path $projectRoot $name),"#include `"stdafx.h`"`nint local_batch_$i(){return $i;}`n")
+                $suffix=if($LongOutputNames){'_'+('s'*55)}else{''}
+                $name="local-batch-$i$suffix.cpp";[IO.File]::WriteAllText((Join-Path $projectRoot $name),"#include `"stdafx.h`"`nint local_batch_$i(){return $i;}`n")
                 $n=$xml.CreateElement('ClCompile',$xml.DocumentElement.NamespaceURI);$n.SetAttribute('Include',$name);[void]$group.AppendChild($n)
             }
             $xml.Save($project)
@@ -79,6 +81,14 @@ try {
     if($HybridPolicy -and $policy.PSObject.Properties.Name -contains 'localBatchSlots' -and $policy.localBatchSlots -gt 1){
         if(!(Select-String -Path $full -SimpleMatch 'DBE: local-batch-running ' -Quiet)){throw 'Local MP group did not execute'}
         $checks.Add('native-MP-group-preserves-shared-PCH-PDB-and-links')
+        if($LongOutputNames){
+            $objects=@(Get-ChildItem (Join-Path $projectRoot 'out\Debug\obj') -Filter 'local-batch-*_*.obj')
+            if($objects.Count -ne 16){throw 'Long-named objects missing'}
+            $localEvents=@(Get-ChildItem $state -Filter 'local-batch-running.json' -Recurse|ForEach-Object {Get-Content $_.FullName -Raw|ConvertFrom-Json}|Where-Object {$_.source -match 'local-batch-.*_s{55}\.cpp$'})
+            if(!$localEvents.Count){throw 'Long-named files never exercised local MP'}
+            if(@(Get-ChildItem (Join-Path $state 'local') -Directory).Count){throw 'Confirmed local outputs were not cleaned'}
+            $checks.Add('long-object-names-local-MP-publication-and-cleanup')
+        }
     }
     & (Join-Path $projectRoot 'out\Debug\bin\remote-probe.exe');if($LASTEXITCODE -ne 42){throw 'Mixed encoding executable failed'}
     if(Select-String -LiteralPath $full -Pattern 'LNK4099|warning C4244' -Quiet){throw 'PDB or external warning profile lost'}

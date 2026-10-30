@@ -50,7 +50,9 @@ try {
     foreach($handle in $handles){if(!$handle.WaitForExit(10000)){throw 'A captured MP compiler survived cancellation'}}
     $leases=Join-Path (Split-Path $config.hostPolicy -Parent) 'leases'
     if(@(Get-ChildItem $leases -Filter '*.lease'|Where-Object Length -gt 0).Count){throw 'Graceful cancellation retained unconfirmed reservations'}
-    @{Checks=@('real-MSVC-MP-driver-and-two-live-children','build-host-cancel-exit-130','captured-compiler-handles-exited','graceful-cancel-clears-reservations');Observed=$observed;Run=$run}|ConvertTo-Json -Depth 5|Tee-Object -FilePath (Join-Path $run 'checks.json')
+    $staging=Join-Path ([IO.Path]::GetFullPath([IO.Path]::Combine($AdapterDirectory,$config.stateDirectory))) 'local'
+    if((Test-Path $staging) -and @(Get-ChildItem $staging -Force).Count){throw 'Confirmed cancellation retained local compiler staging'}
+    @{Checks=@('real-MSVC-MP-driver-and-two-live-children','build-host-cancel-exit-130','captured-compiler-handles-exited','graceful-cancel-clears-reservations','confirmed-cancel-clears-local-staging');Observed=$observed;Run=$run}|ConvertTo-Json -Depth 5|Tee-Object -FilePath (Join-Path $run 'checks.json')
 } finally {
     if($process){if(!$process.HasExited){$process.StandardInput.Close();if(!$process.WaitForExit(45000)){$process.Kill();$process.WaitForExit()}};$process.Dispose()}
     foreach($handle in $handles){$handle.Dispose()}

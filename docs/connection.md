@@ -34,6 +34,14 @@ $adapter.AdapterDirectory
 
 예시 예산은 최적값이 아니다. localSlots는 논리 CPU 수보다 작게 하고 실제 workload와 메모리에 맞춰 결정한다. 같은 policy 디렉터리의 Adapter가 예약을 공유한다. 모든 policy/수신 Worker를 통합한 머신 서비스는 아니다. 새 Adapter 경로를 사용해 실행 중 runtime을 덮어쓰지 않는다.
 
+설치 경로가 깊으면 `-StateDirectory C:\DBE\state\<새-id>`처럼 짧은 절대 경로를 지정한다. 상대 경로는 Adapter 디렉터리를 기준으로 해석한다. MSVC와 MSBuild Tracker에는 긴 경로 제약이 있으므로 Windows long-path 설정만으로 해결되지 않는다. local object는 state 아래 짧은 전용 폴더에서 생성한 뒤 최종 위치 옆 임시 파일을 거쳐 원자적으로 반영한다. 취소 후 프로세스 정리가 확인되지 않은 staging은 보존한다.
+
+## Local 전용 비교
+
+같은 생성 스크립트에 `-Mode Local`을 지정하면 native wrapper가 선택된 MSVC의 인자·PCH·MP·진단을 그대로 전달한다. 이 모드는 Worker에 요청하지 않고, Hybrid의 그룹 분할이나 Worker용 프로세스·메모리·시간 한도를 적용하지 않는다. 생성 API는 현재 기존 `-ClientConfig` 경로를 요구하지만 Local 실행에는 사용하지 않는다.
+
+새 Adapter를 생성해서 사용한다. `msbuild.json`의 mode만 바꾸면 실행 파일과 추적 설정이 맞지 않는다. 선택된 compiler는 UTF-16LE `.compiler` sidecar에 기록되며, 잘못된 sidecar를 환경 변수로 우회하지 않는다. Local 출력에는 Hybrid의 `local-running` 이벤트 대신 원래 compiler 진단이 나온다.
+
 다른 Worker는 별도 package/pair를 만든 뒤 새 Adapter 생성에 `-AdditionalClients @($otherNode.ClientConfig)`로 추가한다. 같은 인증서의 중복 등록은 거부한다. Worker별 실행 2개, 준비 티켓은 실행 중인 항목을 포함해 최대 4개다. 양방향 enrollment와 공정성은 미완성이다.
 
 솔루션 옆 `<solution>.dbe.json`에 아래 내용을 저장한다. 기존 설정은 백업하고 필요한 경로만 변경한다:

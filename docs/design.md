@@ -3,7 +3,9 @@
 VSIX → 원래 MSBuild CL Task/추적 → Adapter → local MSVC 또는 TLS Worker → artifact 검증/publication → local link 순서다. 별도 compiler wrapper는 caller 인자·환경·진단을 보존한다.
 
 - 프로세스: Job Object를 creation 시점에 할당하고 소유 handle을 유지한다. PID/경로만으로 종료 대상을 결정하지 않는다.
+- Local 전용: native wrapper로 원래 MSVC PCH/MP를 보존한다. 자신의 빌드에는 Worker용 고정 제한을 적용하지 않는다. 수신 요청의 보호 정책과 구분한다.
 - 파일: 준비된 TU와 명시 입력을 TLS로 보내고 object/PDB를 검증 후 원자적으로 반영한다. 공유 CAS가 아니다.
+- Local staging: object별 hash/attempt 중첩과 compiler 출력 폴더를 분리한다. 짧은 Job 전용 폴더를 사용하고, 확인된 프로세스 정리 후에만 지운다. 최종 목적지 볼륨에서 rename하여 publication한다.
 - PCH: 생성은 local, 원격 사용자는 `/P /Y-`로 펼친다. 원격 PCH reuse는 없다. 같은 local PDB는 하나의 MP Job 안에서 사용한다.
 - 추적: native MSBuild 추적을 보존하고 include membership 변화를 추가로 확인한다. runtime 파일은 실제 parent directory 기준으로 제외한다.
 - 예산: Worker별 준비 티켓과 실제 요청 제한을 분리한다. fallback은 local PDB 대기 전에 원격 lease를 놓는다. 동일 scheduler에서 required-local waiter가 새 MP group에 밀리지 않게 한다.

@@ -15,7 +15,8 @@
     <LinkToolExe Condition="'$(DBEHybrid)' == 'true'">dbe-link.exe</LinkToolExe>
     <LIBToolPath Condition="'$(DBEHybrid)' == 'true'">$(DBEAdapterDirectory)</LIBToolPath>
     <LIBToolExe Condition="'$(DBEHybrid)' == 'true'">dbe-lib.exe</LIBToolExe>
-    <DBEIncrementalTracking Condition="'$(DBEIncrementalTracking)' == '' And '$(DBEHybrid)' == 'true'">true</DBEIncrementalTracking>
+    <DBEIncrementalTracking Condition="'$(DBEIncrementalTracking)' == '' And ('$(DBEHybrid)' == 'true' Or '$(DBELocal)' == 'true')">true</DBEIncrementalTracking>
+    <DBELocalInputs Condition="'$(DBELocal)' == 'true'">$(DBEAdapterDirectory)\dbe-remote-cl.compiler</DBELocalInputs>
   </PropertyGroup>
   <Target Name="DBEPrepareRemoteCompile" BeforeTargets="ClCompile" Condition="'$(DBEEnabled)' == 'true'">
     <PropertyGroup><DBESelectedCompiler>$([System.IO.Path]::GetFullPath('$(VCToolsInstallDir)bin\Hostx64\x64\cl.exe'))</DBESelectedCompiler></PropertyGroup>
@@ -29,18 +30,19 @@
         SearchRoots="$(IncludePath);$(ExternalIncludePath);@(ClCompile->'%(AdditionalIncludeDirectories)');@(ClCompile->'%(ExternalIncludePath)')"
         ExcludedRoots="$(IntDir);$(OutDir);$(DBEAdapterDirectory);$(DBEStateDirectory);$(DBELeaseDirectory)"
         TrackedRuntimeRoots="$(DBEAdapterDirectory);$(DBEStateDirectory);$(DBELeaseDirectory)"
-        RuntimeInputs="$(DBEAdapterDirectory)\msbuild.json;$(DBEAdapterDirectory)\dbe-worker.dll;$(DBEAdapterDirectory)\DBE.Remote.targets;$(DBEAdapterDirectory)\DbeInputInventory.cs">
+        RuntimeInputs="$(DBEAdapterDirectory)\msbuild.json;$(DBEAdapterDirectory)\dbe-remote-cl.exe;$(DBEAdapterDirectory)\dbe-worker.dll;$(DBEAdapterDirectory)\DBE.Remote.targets;$(DBEAdapterDirectory)\DbeInputInventory.cs;$(DBELocalInputs)">
       <Output TaskParameter="Changed" PropertyName="DBEInputMembershipChanged" />
       <Output TaskParameter="Fingerprint" PropertyName="DBEInputFingerprint" />
       <Output TaskParameter="TrackedExclusions" ItemName="DBETrackedExclusions" />
     </DbeInputInventory>
     <ItemGroup>
       <ClCompile Update="@(ClCompile)">
-        <!-- Hybrid preserves native content/command tracking and invalidates
+        <!-- Hybrid/Local preserve native content/command tracking and invalidate
              include membership changes. Other modes keep full revalidation. -->
         <MinimalRebuildFromTracking Condition="'$(DBEIncrementalTracking)' != 'true' Or '$(DBEInputMembershipChanged)' == 'true'">false</MinimalRebuildFromTracking>
         <ExcludedInputPaths>@(DBETrackedExclusions);%(ClCompile.ExcludedInputPaths)</ExcludedInputPaths>
-        <DeleteOutputBeforeExecute>false</DeleteOutputBeforeExecute>
+        <DeleteOutputBeforeExecute Condition="'$(DBELocal)' != 'true'">false</DeleteOutputBeforeExecute>
+        <DeleteOutputBeforeExecute Condition="'$(DBELocal)' == 'true'">true</DeleteOutputBeforeExecute>
       </ClCompile>
     </ItemGroup>
   </Target>

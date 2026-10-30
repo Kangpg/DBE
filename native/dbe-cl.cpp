@@ -36,18 +36,37 @@ BOOL WINAPI consoleControl(DWORD event) {
 }
 
 Result run() {
-    const DWORD required = GetEnvironmentVariableW(L"DBE_REAL_CL", nullptr, 0);
-    if (!required) return Failure{"DBE_REAL_CL must name an absolute compiler path", ERROR_BAD_ENVIRONMENT};
-    std::wstring compiler(required, L'\0');
-    const DWORD size = GetEnvironmentVariableW(L"DBE_REAL_CL", compiler.data(), required);
-    if (!size || size >= required) return error("read DBE_REAL_CL");
-    compiler.resize(size);
-    if (!std::filesystem::path(compiler).is_absolute() || compiler.find(L'"') != std::wstring::npos)
-        return Failure{"DBE_REAL_CL must be an unquoted absolute path", ERROR_BAD_PATHNAME};
-
     std::vector<wchar_t> ownPath(32768);
     const DWORD ownSize = GetModuleFileNameW(nullptr, ownPath.data(), static_cast<DWORD>(ownPath.size()));
     if (!ownSize || ownSize >= ownPath.size()) return error("resolve wrapper path");
+    // A packaged Local adapter pins its selected compiler in a UTF-16 sidecar.
+    // Standalone wrappers retain their existing process-environment contract.
+    auto configPath = std::filesystem::path(ownPath.data()).replace_extension(L".compiler");
+    Handle config(CreateFileW(configPath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                              nullptr, OPEN_EXISTING, 0, nullptr));
+    std::wstring compiler;
+    if (config.valid()) {
+        LARGE_INTEGER bytes{}; DWORD read = 0;
+        if (!GetFileSizeEx(config.get(), &bytes)) return error("read compiler configuration size");
+        if (bytes.QuadPart < 4 || bytes.QuadPart > 65534 || bytes.QuadPart % 2)
+            return Failure{"invalid compiler configuration size", ERROR_INVALID_DATA};
+        std::vector<wchar_t> text(static_cast<size_t>(bytes.QuadPart / 2));
+        if (!ReadFile(config.get(), text.data(), static_cast<DWORD>(bytes.QuadPart), &read, nullptr))
+            return error("read compiler configuration");
+        if (read != bytes.QuadPart || text[0] != 0xfeff)
+            return Failure{"compiler configuration must be UTF-16LE with BOM", ERROR_INVALID_DATA};
+        compiler.assign(text.begin() + 1, text.end());
+    } else {
+        if (GetLastError() != ERROR_FILE_NOT_FOUND) return error("open compiler configuration");
+        const DWORD required = GetEnvironmentVariableW(L"DBE_REAL_CL", nullptr, 0);
+        if (!required) return Failure{"DBE_REAL_CL must name an absolute compiler path", ERROR_BAD_ENVIRONMENT};
+        compiler.resize(required);
+        const DWORD size = GetEnvironmentVariableW(L"DBE_REAL_CL", compiler.data(), required);
+        if (!size || size >= required) return error("read DBE_REAL_CL");
+        compiler.resize(size);
+    }
+    if (!std::filesystem::path(compiler).is_absolute() || compiler.find(L'"') != std::wstring::npos || compiler.find(L'\0') != std::wstring::npos)
+        return Failure{"compiler must be an unquoted absolute path", ERROR_BAD_PATHNAME};
     // Keep identity handles open through CreateProcess. Deny replacement while
     // checking; compare file IDs rather than case-folded paths or basenames.
     Handle self(CreateFileW(ownPath.data(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
