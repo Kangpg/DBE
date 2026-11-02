@@ -1,10 +1,9 @@
 # 이슈 추적
 
-오류 수정과 합성 검증을 마쳤다. 외부 빌드가 진행 중이므로 사용자 요청으로 성능 측정은 보류한다. 기록은 DBE의 일반적인 현상과 완료 조건으로 제한한다.
+현재 프로젝트의 반복 전체 빌드 비교를 마쳤다. [벤치마크 보고서](benchmark.md)에 조건과 회차별 시간을 기록했다.
 
 ## 열린 작업
 
-- [DBE-001](https://github.com/Kangpg/DBE/issues/1)
 - [DBE-002](https://github.com/Kangpg/DBE/issues/2)
 - [DBE-003](https://github.com/Kangpg/DBE/issues/3)
 - [DBE-004](https://github.com/Kangpg/DBE/issues/4)
@@ -13,17 +12,11 @@
 - [DBE-007](https://github.com/Kangpg/DBE/issues/7)
 - [DBE-008](https://github.com/Kangpg/DBE/issues/8)
 
-### DBE-001 · P0 · MP staging 오류 재현
-
-C1083/D8040을 실제 MSVC의 긴 object 출력 경로로 재현했다. hash/attempt metadata와 compiler 출력 폴더를 분리하고, 짧은 staging에서 목적지 볼륨의 원자적 publication으로 전환했다. 최신 합성 PCH/PDB·긴 파일명 검사와 실제 MP 자식 취소·정리가 통과했다. 현재 프로젝트 전체 Hybrid 성공을 확인한 뒤 닫는다.
-
 ### DBE-002 · P1 · native 로컬 처리량 동등성
 
 동일 PCH/MP/옵션의 native 대 DBE Local 전용 비교로 batch 분할과 입장 제어 비용을 분리한다. 완료 조건: 일반 앱 유지, 반복 성공 시간·CPU·peak commit·no-op 비교.
 
-Local 전용을 native wrapper로 전환해 원래 PCH/MP를 보존하고 Worker용 고정 한도를 제거했다. MSBuild 실패 object 정리와 증분 빌드도 검증했다. 입력 변경 및 외부 빌드 중첩이 발견된 측정은 무효 처리했다. 고정 입력과 빌드 중첩이 없는 구간에서 반복 비교가 남아 있다.
-
-순정 솔루션 진입점의 링크 실패와 표준 프로젝트 Build의 성공을 구분했다. 다음 측정은 동일한 프로젝트 Build 진입점으로 수행하며, 실패 시간이나 기존 출력 재사용 진단을 fresh-build 결과로 합산하지 않는다. 현재 사용자 요청으로 성능 측정은 보류 상태다.
+Local 전용은 원래 PCH/MP를 보존한다. 현재 프로젝트 전체 빌드 평균 시간은 순정 대비 +0.9%였다. 같은 프로젝트 Build 진입점에서 무변경 빌드 시간 비교가 남아 있다.
 
 ### DBE-003 · P1 · 원격 입력 비용과 단계별 계측
 
@@ -39,7 +32,7 @@ Local 전용을 native wrapper로 전환해 원래 PCH/MP를 보존하고 Worker
 
 ### DBE-006 · P1 · 전체 및 증분 성능 검증
 
-현재 프로젝트 전체 성공 후 전체/무변경/소스 변경/헤더 변경을 반복 비교한다. cache·앱·build event 조건, 실패와 미측정 비용을 기록한다. 보고서에는 현재 프로젝트라는 표현과 승인된 결과만 남긴다.
+전체 빌드는 세 모드에서 각각 두 번 성공했다. 남은 비교 항목은 무변경, 소스 변경, 헤더 변경이다.
 
 ### DBE-007 · P2 · Worker 실행 대시보드
 
@@ -52,6 +45,8 @@ compiler 버전/identity와 실제 queue/receive/compile/return 상태를 표시
 일반 VS Build는 사용자별 솔루션 등록으로 연결할 수 있다. VS 2026 기본 Build에서 합성 PCH/MP 프로젝트의 Local 빌드, 무변경, 컴파일 오류, 기본 취소와 복구를 확인했다. 같은 명령에서 동일 compiler의 루프백 TLS Worker와 로컬 분배도 확인했다. 새 머신 자동 설치와 Worker 페어링은 후속 작업이다.
 
 ## 해결 이력
+
+- [DBE-001](https://github.com/Kangpg/DBE/issues/1) 긴 MP 출력 경로의 C1083/D8040을 수정했다. 합성 오류·취소 회귀 후 현재 프로젝트 전체 Hybrid 빌드와 최종 링크를 두 회차에서 확인했다.
 
 - wrapper의 caller handle 상속으로 MSVC 진단 보존.
 - Schannel 인증서 로딩과 lifetime 수정.

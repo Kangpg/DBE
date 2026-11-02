@@ -19,8 +19,8 @@
     },
     {
       "file": "docs/benchmark.md",
-      "bytes": 4732,
-      "sha256": "00b99c5a6e3f87c275e839ce3a0b2ecf455d7144a3731538b32c03392ebc6c07"
+      "bytes": 6067,
+      "sha256": "10e79d4629544b6200ac40fcbcac40ecf152be9ed01d51f4c02e2bde09d4db24"
     },
     {
       "file": "docs/connection.md",
@@ -39,8 +39,8 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 5076,
-      "sha256": "4fc5543a6c7a8248ca88117eb5a655064329ec1f78c04ead1245259fc016cec7"
+      "bytes": 4158,
+      "sha256": "ad91a56e713472e5ce6de7a26534f915937c2f535d2a4280c816df334858b6fa"
     },
     {
       "file": "docs/usage.md",
@@ -139,8 +139,8 @@
     },
     {
       "file": "README.md",
-      "bytes": 1998,
-      "sha256": "adca10bf054063bc3e7bb35321fa6d8bd1758432d1e6a2c74cce7a4d1f024ff4"
+      "bytes": 1687,
+      "sha256": "c3b35ae31133a7ddbfaa84271413d61e08cd2c48bb577a936f00fbec20c48d86"
     },
     {
       "file": "scripts/Allow-WorkerFirewall.ps1",
