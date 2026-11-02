@@ -28,6 +28,21 @@ static class Program
                 return 0;
             }
             if (args[0] == "self-test" && args.Length == 4) { await SelfTest.Run(args[1], args[2], args[3]); return 0; }
+            if (args[0] == "native-pch-test" && args.Length == 4)
+            {
+                var (config, root) = Identity.ReadConfig<ClientConfig>(args[1]);
+                using var client = new Client(config, root);
+                string output = System.IO.Path.GetFullPath(args[3]);
+                if (Directory.Exists(output)) throw new Rejected("Test output must be new");
+                Directory.CreateDirectory(output);
+                stop.CancelAfter(TimeSpan.FromSeconds(180));
+                Capabilities remote = await client.Info(stop.Token, 4);
+                using var compiler = new Compiler(args[2]);
+                if (remote.Toolchain != compiler.Identity) throw new Rejected("Local verifier and Worker compiler must match");
+                await SelfTest.NativePchContracts(client, remote.Toolchain, args[2], output, stop.Token);
+                Console.WriteLine("PASS native-pch-test");
+                return 0;
+            }
             if (args[0] == "serve" && args.Length == 2)
             {
                 var (config, root) = Identity.ReadConfig<WorkerConfig>(args[1]);

@@ -19,8 +19,8 @@
     },
     {
       "file": "docs/benchmark.md",
-      "bytes": 6067,
-      "sha256": "10e79d4629544b6200ac40fcbcac40ecf152be9ed01d51f4c02e2bde09d4db24"
+      "bytes": 7466,
+      "sha256": "57bbfcdac077862dc5856b935b9d4151339671143f2aebbf3a2dac5ac128abf1"
     },
     {
       "file": "docs/connection.md",
@@ -39,8 +39,13 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 4158,
-      "sha256": "ad91a56e713472e5ce6de7a26534f915937c2f535d2a4280c816df334858b6fa"
+      "bytes": 4531,
+      "sha256": "e9185773b776e9c19802e9dd093b3ec227622394221ddb692ad76ac32952465e"
+    },
+    {
+      "file": "docs/native-pch.md",
+      "bytes": 2100,
+      "sha256": "c85717309f5ea7a5ef4a9858562955b9d10b763d7817392a4ce9ccd42554d790"
     },
     {
       "file": "docs/usage.md",
@@ -199,13 +204,18 @@
     },
     {
       "file": "scripts/Package-WorkerUpgrade.ps1",
-      "bytes": 2355,
-      "sha256": "abb9a4353466f285ca5cf4beb1e568d4e053f2e4c663e2bc9712b40fa4e1d95b"
+      "bytes": 2363,
+      "sha256": "53a8d5d7139b0690f41ed0b97d4109e161750160528eb852246e7cf612ca332f"
     },
     {
       "file": "scripts/Set-NormalBuild.ps1",
       "bytes": 5036,
       "sha256": "110f750360307f79ca77cfcb64418c284981ce2585943c2b4b61497f870e3f5d"
+    },
+    {
+      "file": "scripts/summarize-build-timing.py",
+      "bytes": 2561,
+      "sha256": "d9ab80730cb7e77250c736ab84ae7fbbec567bc4109bd00fe07965799a47cd34"
     },
     {
       "file": "scripts/Test-BuildHost.ps1",
@@ -231,6 +241,11 @@
       "file": "scripts/Test-MSBuildBaseline.ps1",
       "bytes": 5407,
       "sha256": "b6ff8ad863d3b28b727e6ee8269145e0250e0244e9ca1059f5e67255b0e924ad"
+    },
+    {
+      "file": "scripts/Test-NativePch.ps1",
+      "bytes": 1064,
+      "sha256": "b104d1d0b17ea3774773145b36162e2a4c3b83df8c542ee37e64c842575888bd"
     },
     {
       "file": "scripts/Test-NormalBuild.ps1",
@@ -279,8 +294,8 @@
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 6811,
-      "sha256": "e900833a4204ac03dcca9d45a76908b249b582e475769868337bbbfce1e599e6"
+      "bytes": 7264,
+      "sha256": "b7ce00e5f56a478332f6f4d0cdb5b724d4393de165f4775fd667341717b75176"
     },
     {
       "file": "tests/child-probe.cpp",
@@ -353,9 +368,14 @@
       "sha256": "be2de24314bf0cdc348e61e2d6a9b409d475025e848a3385e9ed82e7ae656a67"
     },
     {
+      "file": "worker/BuildTiming.cs",
+      "bytes": 1402,
+      "sha256": "dc02e8eaf7f8743b541e8cb259d52a831d4f5bb8f70340bba83c9980be3d8af6"
+    },
+    {
       "file": "worker/Client.cs",
-      "bytes": 5534,
-      "sha256": "b75b7a9e2f60c79831338f66c4ddd7686d7dd8aabd76c2b0cdb99d546fec8a0b"
+      "bytes": 5990,
+      "sha256": "f2ef11ef41589571e0d0d55574b40a86efd97b0d497a8706748247d724de743d"
     },
     {
       "file": "worker/ClInvocation.cs",
@@ -369,8 +389,8 @@
     },
     {
       "file": "worker/Compiler.cs",
-      "bytes": 4910,
-      "sha256": "f1861279e9985bb22ca28502d2d0e9762c6f6e87d50083d456de97e763b621a0"
+      "bytes": 4974,
+      "sha256": "1820b9a2a93e1535c20142ef4ccd2847ce6fbdd0bb21b626fcb76be575fcde6f"
     },
     {
       "file": "worker/Dbe.Worker.csproj",
@@ -389,8 +409,8 @@
     },
     {
       "file": "worker/HostScheduler.cs",
-      "bytes": 15568,
-      "sha256": "6a16fc1a7f8bec3632eebb2b4dc14331b8cfb21418e376b053a3c07942b91c3b"
+      "bytes": 17085,
+      "sha256": "3112cdac98aab0ea619e6b5ac2877f9372e6b17285349373094eaab7dd1df3fc"
     },
     {
       "file": "worker/Identity.cs",
@@ -399,43 +419,48 @@
     },
     {
       "file": "worker/LocalCompileBatch.cs",
-      "bytes": 7949,
-      "sha256": "503dee3a3cb406e4544a0f594427c79eaecc05c8f4402823ba84bc7bc2a4f8b4"
+      "bytes": 8603,
+      "sha256": "34d2512a08f75665f147536e7ef036352263a74b49e668dfbe94d3d8f30c781f"
     },
     {
       "file": "worker/MsBuildAdapter.cs",
-      "bytes": 21863,
-      "sha256": "bf660c130fd3c802fa87af524484c26aef3c7de0f57430bae0e2ae85eb745e44"
+      "bytes": 22989,
+      "sha256": "d88ffad7b02c2ae5edf95ef08260a10c08681151c175f19f6133cd01a81dc6ff"
+    },
+    {
+      "file": "worker/PchPair.cs",
+      "bytes": 3293,
+      "sha256": "ece0ad9e8134a65d0aca75223234256477a8badeef7b94f52a4ad1461b494f77"
     },
     {
       "file": "worker/PreparedInput.cs",
-      "bytes": 7592,
-      "sha256": "101a4819d2cb58b7ad137b7a0b7955048e840ee933e1b0646ea63cc65249a097"
+      "bytes": 9296,
+      "sha256": "002e9dd65e33a295cd1a601649517f2a5b22c7155073c97fce6f66e400b342c4"
     },
     {
       "file": "worker/Program.cs",
-      "bytes": 5603,
-      "sha256": "b7b897cc7e3ab5e7888bdea90432901a25008693403bf2acb5110de6c039439f"
+      "bytes": 6564,
+      "sha256": "8e087a02917e415bc0c0078ca3ae17858acb9e0ce0da8b39a8721c916003718b"
     },
     {
       "file": "worker/Protocol.cs",
-      "bytes": 7806,
-      "sha256": "444d9df58c7313656d9c74f2c8d1b4c6ffc3038f7eb53878a4260e838f16941c"
+      "bytes": 8283,
+      "sha256": "c5886b97ac47f88970077c7b0651d7f1f8d9fe5f3b14f40709c030dc2e579180"
     },
     {
       "file": "worker/SchedulerSelfTest.cs",
-      "bytes": 13290,
-      "sha256": "f73cf42329622a8f7d32ca9d6bce40d498bffbf238dfc3ac1c5fc8046b4ab387"
+      "bytes": 14198,
+      "sha256": "63cdc895cd16cd28d986295aed64c0ce48af7ff6d6aeaa4f0bc1b897729d31c5"
     },
     {
       "file": "worker/SelfTest.cs",
-      "bytes": 15548,
-      "sha256": "46bea85acebe1c5a70d70eab70fc3a8858edf313adb69cc59d0c266c7d584086"
+      "bytes": 20512,
+      "sha256": "12286596b7a2f73d2ca19202778c99adff2f7cdc64dcec35b152031d8851e0ab"
     },
     {
       "file": "worker/Worker.cs",
-      "bytes": 11002,
-      "sha256": "113671d01534ab6cebcea1905559a9b7058d9eaacbccf6caef5967aa4951eaaf"
+      "bytes": 12101,
+      "sha256": "f482ffa2fa5c92b216aabb368a43b3b944b1bc317fb054d78893982f2603e9b0"
     }
   ]
 }

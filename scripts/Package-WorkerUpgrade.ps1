@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$DeploymentFile,[Parameter(Mandatory)][string]$PublishDirectory,[ValidateSet(2,3)][int]$ProtocolVersion=3,[string]$Compiler)
+param([Parameter(Mandatory)][string]$DeploymentFile,[Parameter(Mandatory)][string]$PublishDirectory,[ValidateSet(2,3,4)][int]$ProtocolVersion=3,[string]$Compiler)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $old=Get-Content -Raw -LiteralPath $DeploymentFile | ConvertFrom-Json
@@ -12,7 +12,7 @@ $oldWorker=Split-Path $old.WorkerConfig -Parent; $oldClient=Split-Path $old.Clie
 foreach($name in @('identity.pfx','worker.json','start-worker.cmd','Allow-WorkerFirewall.ps1')) { Copy-Item -LiteralPath (Join-Path $oldWorker $name) -Destination $worker }
 foreach($name in @('identity.pfx','client.json')) { Copy-Item -LiteralPath (Join-Path $oldClient $name) -Destination $client }
 if($Compiler) {
-    if($ProtocolVersion -ne 3){throw 'Bundled compiler requires the v3 package'}
+    if($ProtocolVersion -lt 3){throw 'Bundled compiler requires protocol v3 or later'}
     $compilerPath=(Resolve-Path -LiteralPath $Compiler).Path
     if([IO.Path]::GetFileName($compilerPath) -ne 'cl.exe'){throw 'Expected MSVC cl.exe'}
     $toolchain=Join-Path $worker 'toolchain';New-Item -ItemType Directory -Path $toolchain|Out-Null

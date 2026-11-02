@@ -108,11 +108,17 @@ sealed class Worker : IDisposable
                 using var monitorStop = new CancellationTokenSource();
                 Task monitor = Monitor(tls, execution, monitorStop.Token);
                 Execution result;
-                string? pdbName = request.Version == 3 && request.Options!.Contains("/Zi") ? "dbe-" + attempt + ".pdb" : null;
+                string? pdbName = request.ReturnsPdb ? "dbe-" + attempt + ".pdb" : null;
+                string attemptDirectory = workspace;
                 try
                 {
                     Event("running", attempt);
-                    result = await compiler.Run(workspace, request.Source!, config.TimeoutSeconds, config.MemoryMiB, execution.Token, request.Options, pdbName);
+                    if (request.NativePch is { } pair)
+                    {
+                        execution.CancelAfter(TimeSpan.FromSeconds(config.TimeoutSeconds));
+                        result = await Task.Run(() => pair.Run(compiler.Path, attemptDirectory, request, config.TimeoutSeconds, config.MemoryMiB, execution.Token, pdbName));
+                    }
+                    else result = await compiler.Run(workspace, request.Source!, config.TimeoutSeconds, config.MemoryMiB, execution.Token, request.Options, pdbName);
                 }
                 finally { monitorStop.Cancel(); await monitor; }
                 if (result.Kind == 5)
@@ -125,6 +131,7 @@ sealed class Worker : IDisposable
                     3 => "timeout", 4 => "output-limit", _ => "infrastructure-error" };
                 InputFile? output = null;
                 InputFile? pdb = null;
+                InputFile? producer = null;
                 string? objectPath = workspace is null ? null : System.IO.Path.Combine(workspace, "result.obj");
                 if (status == "completed")
                 {
@@ -134,6 +141,13 @@ sealed class Worker : IDisposable
                     int limit = request.Version == 3 ? Wire.PreparedObjectLimit : Wire.OutputLimit;
                     if (length <= 0 || length > limit) throw new Rejected($"Object size {length} exceeds supported range 1..{limit}");
                     output = new InputFile("result.obj", length, Wire.HashFile(objectPath));
+                    if (request.NativePch is not null)
+                    {
+                        string path = System.IO.Path.Combine(attemptDirectory, "producer.obj");
+                        Wire.NoReparse(path);
+                        if (new FileInfo(path).Length is <= 0 or > Wire.OutputLimit) throw new Rejected("Producer object out of bounds");
+                        producer = new InputFile("producer.obj", new FileInfo(path).Length, Wire.HashFile(path));
+                    }
                     if (pdbName is not null)
                     {
                         string path = System.IO.Path.Combine(workspace!, pdbName);
@@ -145,12 +159,13 @@ sealed class Worker : IDisposable
                 Event(status, attempt, result.Kind == 1 || result.Kind == 5 ? "Win32=" + result.Error : "");
                 await Wire.Write(tls, new Reply(status, attempt, "native-kind=" + result.Kind + "; win32=" + result.Error,
                     ExitCode: result.Kind == 0 ? result.ExitCode : null, StdoutBytes: result.Stdout.Length,
-                    StderrBytes: result.Stderr.Length, Output: output, Pdb: pdb), lifetime.Token);
+                    StderrBytes: result.Stderr.Length, Output: output, Pdb: pdb, ProducerObject: producer), lifetime.Token);
                 headerSent = true;
                 await tls.WriteAsync(result.Stdout, lifetime.Token);
                 await tls.WriteAsync(result.Stderr, lifetime.Token);
                 if (output is not null) await Wire.SendFile(tls, objectPath!, output, lifetime.Token);
                 if (pdb is not null) await Wire.SendFile(tls, System.IO.Path.Combine(workspace!, pdb.Path), pdb, lifetime.Token);
+                if (producer is not null) await Wire.SendFile(tls, System.IO.Path.Combine(attemptDirectory, producer.Path), producer, lifetime.Token);
             }
             catch (Exception e)
             {

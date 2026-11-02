@@ -36,6 +36,17 @@ static class SchedulerSelfTest
         }
         Check(Directory.GetFiles(Path.Combine(directory, "leases"), "*.lease").All(x => new FileInfo(x).Length == 0), "normal-reservations-release-exactly-once");
         using (var scheduler = new HostScheduler(policy, client))
+        using (var occupied = new FileStream(Path.Combine(directory, "leases", "admission.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+        using (var first = await scheduler.AcquireRemoteRequest("independent transfer A", default))
+        using (var second = await scheduler.AcquireRemoteRequest("independent transfer B", default))
+        using (var stop = new CancellationTokenSource(200))
+        {
+            try { using var excess = await scheduler.AcquireRemoteRequest("capacity", stop.Token); throw new Exception("Exceeded Worker capacity"); }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested) {
+                Check(!first.IsLocal && !second.IsLocal && first.Index != second.Index, "remote-pool-progresses-with-local-admission-locked-and-honors-limit");
+            }
+        }
+        using (var scheduler = new HostScheduler(policy, client))
         {
             using var pdbOwner = await scheduler.Acquire(true, "active local PCH consumer", default, "shared-pdb");
             using var fallbackA = await scheduler.Acquire(false, "unsupported relative include A", default, "shared-pdb");

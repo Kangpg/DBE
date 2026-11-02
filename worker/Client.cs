@@ -58,40 +58,42 @@ sealed class Client : IDisposable
         Reply accepted = await Wire.Read<Reply>(tls, token);
         if (accepted.Status != "accepted") return accepted;
         if (accepted.Attempt != request.Attempt) throw new Rejected("Attempt mismatch");
+        using (BuildTiming.Measure("rpc.upload"))
         foreach (InputFile file in request.Files!)
         {
             string path = System.IO.Path.Combine(inputRoot, file.Path.Replace('/', '\\'));
             Wire.NoReparse(path);
             await Wire.SendFile(tls, path, file, token);
         }
-        Reply reply = await Wire.Read<Reply>(tls, token);
+        Reply reply;
+        using (BuildTiming.Measure("rpc.await-result"))
+            reply = await Wire.Read<Reply>(tls, token);
         if (reply.Attempt != request.Attempt || reply.StdoutBytes is < 0 or > Wire.DiagnosticLimit || reply.StderrBytes is < 0 or > Wire.DiagnosticLimit)
             throw new Rejected("Invalid result framing");
         if ((reply.Status == "completed") != (reply.Output is not null) ||
             (reply.Status == "completed" && reply.ExitCode != 0)) throw new Rejected("Inconsistent result");
-        bool needsPdb = request.Version == 3 && request.Options!.Contains("/Zi") && reply.Status == "completed";
+        bool needsPdb = request.ReturnsPdb && reply.Status == "completed";
+        if ((request.NativePch is not null && reply.Status == "completed") != (reply.ProducerObject is not null) ||
+            (reply.ProducerObject is { } producer && (producer.Path != "producer.obj" || producer.Length is <= 0 or > Wire.OutputLimit || !Wire.ValidHash(producer.Sha256))))
+            throw new Rejected("Invalid PCH producer object manifest");
         if (needsPdb != (reply.Pdb is not null) || (reply.Pdb is { } pdb &&
             (pdb.Path != "dbe-" + request.Attempt + ".pdb" || pdb.Length is <= 0 or > Wire.PdbLimit || !Wire.ValidHash(pdb.Sha256))))
             throw new Rejected("Invalid PDB manifest");
+        using var receive = BuildTiming.Measure("rpc.receive-publish");
         await ReadDiagnostic(tls, System.IO.Path.Combine(outputRoot, "stdout.bin"), reply.StdoutBytes, token);
         await ReadDiagnostic(tls, System.IO.Path.Combine(outputRoot, "stderr.bin"), reply.StderrBytes, token);
-        if (reply.Output is { } output)
-        {
-            if (output.Path != "result.obj" || output.Length <= 0 || output.Length > (request.Version == 3 ? Wire.PreparedObjectLimit : Wire.OutputLimit) || !Wire.ValidHash(output.Sha256))
-                throw new Rejected("Invalid output manifest");
-            string pending = System.IO.Path.Combine(outputRoot, "result.obj.partial");
-            await Wire.ReceiveFile(tls, pending, output, token);
-            File.Move(pending, System.IO.Path.Combine(outputRoot, "result.obj"));
-        }
-        if (reply.Pdb is { } symbols)
-        {
-            string pending = System.IO.Path.Combine(outputRoot, symbols.Path + ".partial");
-            await Wire.ReceiveFile(tls, pending, symbols, token);
-            File.Move(pending, System.IO.Path.Combine(outputRoot, symbols.Path));
-        }
+        if (reply.Output is { } output && (output.Path != "result.obj" || output.Length <= 0 ||
+            output.Length > (request.Version == 3 ? Wire.PreparedObjectLimit : Wire.OutputLimit) || !Wire.ValidHash(output.Sha256)))
+            throw new Rejected("Invalid output manifest");
+        var artifacts = new[] { reply.Output, reply.Pdb, reply.ProducerObject }.OfType<InputFile>().ToArray();
+        foreach (var item in artifacts)
+            await Wire.ReceiveFile(tls, System.IO.Path.Combine(outputRoot, item.Path + ".partial"), item, token);
+        foreach (var item in artifacts)
+            File.Move(System.IO.Path.Combine(outputRoot, item.Path + ".partial"), System.IO.Path.Combine(outputRoot, item.Path));
         await File.WriteAllTextAsync(System.IO.Path.Combine(outputRoot, "result.json"), JsonSerializer.Serialize(new
         {
-            request.Attempt, request.Toolchain, request.Version, profile = request.Version == 1 ? "explicit-input-no-sdk-v1" : "preprocessed-v" + request.Version, result = reply
+            request.Attempt, request.Toolchain, request.Version, profile = request.Version switch {
+                1 => "explicit-input-no-sdk-v1", 4 => "native-pch-pair-v4", _ => "preprocessed-v" + request.Version }, result = reply
         }, Wire.Json), token);
         return reply;
     }

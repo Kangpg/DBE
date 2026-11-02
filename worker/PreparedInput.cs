@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
 
 namespace Dbe;
 
@@ -16,13 +18,19 @@ static partial class PreparedInput
 
     private static string ReadSource(string path, Encoding fallback)
     {
-        if (new FileInfo(path).Length > Wire.PreparedLimit) throw new UnsupportedCompile("Source exceeds validation budget");
+        using var input = File.OpenRead(path);
+        return ValidateText(input, path, fallback);
+    }
+
+    private static string ValidateText(Stream input, string path, Encoding fallback)
+    {
+        if (input.Length > Wire.PreparedLimit) throw new UnsupportedCompile("Source exceeds validation budget");
         // MSVC accepts legacy headers with undecodable bytes in comments. Decode
         // with a sentinel, then validate code tokens; do not reject a build only
         // because an SDK/vendor comment uses another encoding.
         var sourceEncoding = (Encoding)fallback.Clone();
         sourceEncoding.DecoderFallback = new DecoderReplacementFallback("\uFFFD");
-        using var reader = new StreamReader(path, sourceEncoding, true);
+        using var reader = new StreamReader(input, sourceEncoding, true, leaveOpen: true);
         string text = reader.ReadToEnd();
         // Throw on characters /P would replace with '?' in its output code page.
         try { _ = fallback.GetByteCount(WithoutComments(text)); }
@@ -93,21 +101,49 @@ static partial class PreparedInput
         return entry;
     }
 
-    internal static void Normalize(string path, ClInvocation invocation)
+    // Successful round-trip checks depend on the exact bytes and target
+    // encoding. Each MSBuild CL batch owns its cache. Read and validate a miss
+    // under the same handle; keep no source bodies or pins between TUs.
+    internal sealed class ValidationCache
+    {
+        private readonly ConcurrentDictionary<(int, string), byte> valid = new();
+        internal void Check(string path, Encoding encoding)
+        {
+            using var input = File.OpenRead(path);
+            if (input.Length > Wire.PreparedLimit) throw new UnsupportedCompile("Source exceeds validation budget");
+            var key = (encoding.CodePage, Convert.ToHexString(SHA256.HashData(input)));
+            if (valid.ContainsKey(key)) return;
+            input.Position = 0;
+            ValidateText(input, path, encoding);
+            valid.TryAdd(key, 0);
+        }
+    }
+
+    internal static void Normalize(string path, ClInvocation invocation, ValidationCache cache)
     {
         Encoding encoding = EncodingFor(invocation.CodePage);
         string text = File.ReadAllText(path, encoding);
         if (ModuleDeclaration().IsMatch(text)) throw new UnsupportedCompile("Module/import declarations require local execution");
         HashSet<string> checkedFiles = new(StringComparer.OrdinalIgnoreCase);
+        // A /P file can name the same header in thousands of line markers.
+        // Resolve a successfully observed spelling once for this TU. Keep
+        // missing paths verbatim and never reuse path mappings for another TU.
+        Dictionary<string, string> linePaths = new(StringComparer.Ordinal);
         checkedFiles.Add(invocation.Source);
         _ = ReadSource(invocation.Source, encoding);
         text = LineDirective().Replace(text, match =>
         {
-            string source = match.Groups[2].Value.Replace("\\\\", "\\").Replace("\\\"", "\"");
-            if (source.StartsWith('<') || !File.Exists(source)) return match.Value;
-            source = Path.GetFullPath(source);
-            if (checkedFiles.Add(source)) _ = ReadSource(source, encoding);
-            return match.Groups[1].Value + source.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            string spelling = match.Groups[2].Value;
+            if (!linePaths.TryGetValue(spelling, out string? escaped))
+            {
+                string source = spelling.Replace("\\\\", "\\").Replace("\\\"", "\"");
+                if (source.StartsWith('<') || !File.Exists(source)) return match.Value;
+                source = Path.GetFullPath(source);
+                if (checkedFiles.Add(source)) cache.Check(source, encoding);
+                escaped = source.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                linePaths.Add(spelling, escaped);
+            }
+            return match.Groups[1].Value + escaped + "\"";
         });
         File.WriteAllText(path, text, encoding);
     }

@@ -71,18 +71,22 @@ sealed class HostScheduler : IDisposable
     // slot. Preparation tickets include requests already in flight, so retained
     // prepared inputs cannot grow with the number of translation units.
     internal Task<Lease> AcquireCompile(string source, CancellationToken token, string? pdb, int localSlots = 1) =>
-        AcquireCore(true, false, workers, true, source, token, pdb, localSlots, true);
+        AcquireCore(true, false, workers, true, source, token, pdb, localSlots, true, stage: "placement");
+
+    internal Task<Lease> AcquirePreprocess(string source, CancellationToken token) =>
+        AcquireCore(true, true, workers, false, source + " [preprocess]", token, memoryMiB: Policy.PreprocessMemoryMiB, stage: "prep");
 
     internal Task<Lease> AcquireRemoteRequest(string source, CancellationToken token, string? clientPath = null) =>
-        AcquireCore(false, false, new[] { clientPath is null ? workers[0] : workers.Single(x => x.ClientPath == clientPath) }, false, source, token, null, 1);
+        AcquireCore(false, false, new[] { clientPath is null ? workers[0] : workers.Single(x => x.ClientPath == clientPath) }, false, source, token, stage: "request");
 
     private async Task<Lease> AcquireCore(bool allowLocal, bool localOnly, RemoteTarget[] candidates, bool pipeline,
-        string source, CancellationToken token, string? pdb, int slotCost, bool flexibleLocal = false, int memoryMiB = 0)
+        string source, CancellationToken token, string? pdb = null, int slotCost = 1, bool flexibleLocal = false, int memoryMiB = 0, string stage = "local")
     {
         if (slotCost < 1 || slotCost > Policy.LocalSlots || (!localOnly && slotCost != 1 && !flexibleLocal)) throw new Rejected("Invalid local reservation cost");
         if (memoryMiB < 0 || memoryMiB > Policy.LocalSlots * Policy.LocalMemoryMiB) throw new Rejected("Invalid memory reservation");
         var watch = Stopwatch.StartNew();
         long reported = 0;
+        using var timing = BuildTiming.Enabled ? new BuildTiming.Wait() : null;
         int start = (Interlocked.Increment(ref nextWorker) & int.MaxValue) % candidates.Length;
         if (cpuBusy is null) await Task.Delay(Math.Max(1, 100 - (int)Stopwatch.GetElapsedTime(lastSample).TotalMilliseconds), token);
         for (;;)
@@ -101,9 +105,13 @@ sealed class HostScheduler : IDisposable
                     int memory = memoryMiB > 0 ? memoryMiB : flexibleLocal && cost > 1 && Policy.LocalBatchMemoryMiB > 0
                         ? Policy.LocalBatchMemoryMiB : cost * Policy.LocalMemoryMiB;
                     if ((lease = TryTake("local", eligible, true, source, pdb, cost, memory, out reason)) is not null) break;
+                    // A smaller group can fit fewer slots or a lower memory
+                    // budget. It cannot acquire an occupied PDB or CPU headroom.
+                    if (reason != "slot capacity" && !reason.StartsWith("memory available=", StringComparison.Ordinal)) break;
                 }
             }
             if (lease is not null) return lease;
+            string localReason = reason;
             if (!localOnly)
                 for (int i = 0; i < candidates.Length; i++)
                 {
@@ -112,6 +120,12 @@ sealed class HostScheduler : IDisposable
                     if (lease is not null) return lease;
                 }
             if (watch.Elapsed.TotalSeconds >= Policy.WaitSeconds) throw new Rejected("Host admission timed out; inspect memory and retained leases in " + root);
+            if (timing is not null)
+            {
+                string localBlock = localReason.StartsWith("memory available=", StringComparison.Ordinal) ? "memory" : localReason;
+                timing.Observe("wait." + stage + "." + (allowLocal ? localBlock : "remote capacity")
+                    + (pipeline ? " + worker unavailable" : ""));
+            }
             if (watch.ElapsedMilliseconds - reported >= 5000) {
                 Console.WriteLine("DBE: admission-wait " + reason + " source=" + source);
                 reported = watch.ElapsedMilliseconds;
@@ -155,54 +169,59 @@ sealed class HostScheduler : IDisposable
     private Lease? TryTake(string pool, int count, bool local, string source, string? pdb, int slotCost, int memoryMiB, out string reason, RemoteTarget? worker = null)
     {
         reason = "slot capacity";
-        using var gate = TryOpen(Path.Combine(root, "admission.lock"));
-        if (gate is null) return null;
-        if (local)
-        {
-            if (Stopwatch.GetElapsedTime(lastSample).TotalMilliseconds >= 100)
-            {
-                ReadCpu(out ulong idle, out ulong total);
-                cpuBusy = total > lastTotal ? 100d * (1d - Math.Min(idle - lastIdle, total - lastTotal) / (double)(total - lastTotal)) : null;
-                lastIdle = idle; lastTotal = total; lastSample = Stopwatch.GetTimestamp();
-            }
-            if (cpuBusy is null || cpuBusy >= Policy.CpuBusyPercent) { reason = "CPU owner headroom"; return null; }
-            var memory = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
-            if (!GlobalMemoryStatusEx(ref memory)) throw new Rejected("Cannot determine available host memory");
-            int reserved = ReservedMemoryMiB();
-            ulong required = (ulong)(Policy.ReserveMemoryMiB + reserved + memoryMiB) * 1024 * 1024;
-            ulong available = Math.Min(memory.AvailablePhysical, memory.AvailablePageFile);
-            if (available < required) { reason = $"memory available={available / 1048576}MiB required={required / 1048576}MiB (headroom={Policy.ReserveMemoryMiB}, reserved={reserved}, next={memoryMiB})"; return null; }
-        }
+        // Remote pools reserve exactly one exclusive file. They do not read
+        // or change the local memory total, so they can progress independently
+        // while another process checks local CPU/memory and multi-slot leases.
+        using var gate = local ? TryOpen(Path.Combine(root, "admission.lock")) : null;
+        if (local && gate is null) { reason = "admission gate"; return null; }
         FileStream? resource = null;
-        if (pdb is not null)
-        {
-            string path = Path.Combine(root, "pdb-" + Wire.Hash(Encoding.UTF8.GetBytes(pdb)) + ".lease");
-            resource = TryOpen(path);
-            if (resource is null) { reason = "compiler PDB in use"; return null; }
-            if (resource.Length != 0) { resource.Dispose(); throw new Rejected("Unconfirmed PDB owner cleanup: " + path); }
-        }
         var files = new List<FileStream>();
-        int firstIndex = -1;
-        try { for (int i = 0; i < count; i++)
+        try
         {
-            string path = Path.Combine(root, $"{pool}-{i}.lease");
-            FileStream? file = TryOpen(path);
-            if (file is null) continue;
-            if (file.Length != 0)
+            if (pdb is not null)
             {
-                file.Dispose();
-                throw new Rejected("Unconfirmed previous owner cleanup; retained lease: " + path);
+                string path = Path.Combine(root, "pdb-" + Wire.Hash(Encoding.UTF8.GetBytes(pdb)) + ".lease");
+                resource = TryOpen(path);
+                if (resource is null) { reason = "compiler PDB in use"; return null; }
+                if (resource.Length != 0) throw new Rejected("Unconfirmed PDB owner cleanup: " + path);
             }
-            files.Add(file);
-            if (firstIndex < 0) firstIndex = i;
-            if (files.Count == slotCost) break;
-        }
-        if (files.Count != slotCost) return null;
-        byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { source, local, slotCost, memoryPerSlotMiB = (memoryMiB + slotCost - 1) / slotCost, process = Environment.ProcessId, started = DateTimeOffset.UtcNow }, Wire.Json);
-        foreach (var file in files) { file.Write(data); file.Flush(true); }
-        if (resource is not null) { resource.Write(data); resource.Flush(true); }
-        var result = new Lease(files.ToArray(), local, firstIndex, resource, worker, memoryMiB);
-        files.Clear(); resource = null; return result;
+            if (local)
+            {
+                if (Stopwatch.GetElapsedTime(lastSample).TotalMilliseconds >= 100)
+                {
+                    ReadCpu(out ulong idle, out ulong total);
+                    cpuBusy = total > lastTotal ? 100d * (1d - Math.Min(idle - lastIdle, total - lastTotal) / (double)(total - lastTotal)) : null;
+                    lastIdle = idle; lastTotal = total; lastSample = Stopwatch.GetTimestamp();
+                }
+                if (cpuBusy is null || cpuBusy >= Policy.CpuBusyPercent) { reason = "CPU owner headroom"; return null; }
+                var memory = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
+                if (!GlobalMemoryStatusEx(ref memory)) throw new Rejected("Cannot determine available host memory");
+                int reserved = ReservedMemoryMiB();
+                ulong required = (ulong)(Policy.ReserveMemoryMiB + reserved + memoryMiB) * 1024 * 1024;
+                ulong available = Math.Min(memory.AvailablePhysical, memory.AvailablePageFile);
+                if (available < required) { reason = $"memory available={available / 1048576}MiB required={required / 1048576}MiB (headroom={Policy.ReserveMemoryMiB}, reserved={reserved}, next={memoryMiB})"; return null; }
+            }
+            int firstIndex = -1;
+            for (int i = 0; i < count; i++)
+            {
+                string path = Path.Combine(root, $"{pool}-{i}.lease");
+                FileStream? file = TryOpen(path);
+                if (file is null) continue;
+                if (file.Length != 0)
+                {
+                    file.Dispose();
+                    throw new Rejected("Unconfirmed previous owner cleanup; retained lease: " + path);
+                }
+                files.Add(file);
+                if (firstIndex < 0) firstIndex = i;
+                if (files.Count == slotCost) break;
+            }
+            if (files.Count != slotCost) return null;
+            byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { source, local, slotCost, memoryPerSlotMiB = (memoryMiB + slotCost - 1) / slotCost, process = Environment.ProcessId, started = DateTimeOffset.UtcNow }, Wire.Json);
+            foreach (var file in files) { file.Write(data); file.Flush(true); }
+            if (resource is not null) { resource.Write(data); resource.Flush(true); }
+            var result = new Lease(files.ToArray(), local, firstIndex, resource, worker, memoryMiB);
+            files.Clear(); resource = null; return result;
         } finally { foreach (var file in files) file.Dispose(); resource?.Dispose(); }
     }
     private static FileStream? TryOpen(string path)

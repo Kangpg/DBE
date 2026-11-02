@@ -64,7 +64,7 @@ static class Native
     private static extern void DbeRun(string exe, string cwd, string args, string? environment, SafeWaitHandle cancel,
         uint timeout, uint memory, [Out] byte[] stdout, [Out] byte[] stderr, uint capacity, out Result result);
 
-    internal static Execution Run(string exe, string cwd, string args, int seconds, int memoryMiB, CancellationToken token, bool inheritEnvironment = false)
+    internal static Execution Run(string exe, string cwd, string args, int seconds, int memoryMiB, CancellationToken token, bool inheritEnvironment = false, string? tempDirectory = null)
     {
         using var cancel = new EventWaitHandle(false, EventResetMode.ManualReset);
         using var registration = token.Register(() => cancel.Set());
@@ -73,7 +73,7 @@ static class Native
             ["SystemRoot"] = Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             ["WINDIR"] = Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             ["PATH"] = System.IO.Path.GetDirectoryName(exe) + ";" + Environment.SystemDirectory,
-            ["TEMP"] = System.IO.Path.Combine(cwd, "tmp"), ["TMP"] = System.IO.Path.Combine(cwd, "tmp"),
+            ["TEMP"] = tempDirectory ?? System.IO.Path.Combine(cwd, "tmp"), ["TMP"] = tempDirectory ?? System.IO.Path.Combine(cwd, "tmp"),
             ["VSLANG"] = "1033"
         };
         string block = string.Join('\0', environment.Select(p => p.Key + "=" + p.Value)) + "\0\0";

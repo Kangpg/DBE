@@ -19,6 +19,17 @@ static class SelfTest
         directory = Path.GetFullPath(directory);
         if (Directory.Exists(directory)) throw new Rejected("Test output must be new");
         Directory.CreateDirectory(directory);
+        var validation = new PreparedInput.ValidationCache();
+        var legacy = PreparedInput.EncodingFor(1252);
+        string header = Path.Combine(directory, "cache-input.h");
+        File.WriteAllText(header, "A", Encoding.Unicode);
+        validation.Check(header, legacy);
+        var stamp = File.GetLastWriteTimeUtc(header);
+        File.WriteAllText(header, "\u0100", Encoding.Unicode);
+        File.SetLastWriteTimeUtc(header, stamp);
+        validation.Check(header, PreparedInput.EncodingFor(65001));
+        try { validation.Check(header, legacy); throw new Exception("Unexpected cached encoding acceptance"); }
+        catch (UnsupportedCompile) { Check(true, "header-validation-distinguishes-bytes-and-codepage-with-identical-stat"); }
         string pair = Path.Combine(directory, "pair");
         Identity.CreatePair(pair, compilerPath, "127.0.0.1");
         var (workerConfig, workerRoot) = Identity.ReadConfig<WorkerConfig>(Path.Combine(pair, "worker", "worker.json"));
@@ -44,6 +55,7 @@ static class SelfTest
             Check(reply.Status == "completed" && File.Exists(Path.Combine(resultDir, "result.obj")), "real-msvc-transfer-hash-object");
             VerifyObject(compilerPath, resultDir, 42);
             Check(true, "link-and-execute-remote-object-42");
+            await NativePchContracts(client, info.Toolchain, compilerPath, directory, token);
             string symbolsDir = Path.Combine(directory, "v3-pdb");
             var symbolsRequest = Manifest() with { Version = 3, Files = [new InputFile("main.cpp", 0, "")], Options = ["/utf-8", "/Zi", "/JMC", "/Od", "/MDd"] };
             string prepared = Path.Combine(directory, "v3-input"); Directory.CreateDirectory(prepared);
@@ -135,14 +147,63 @@ static class SelfTest
         File.WriteAllText(Path.Combine(directory, "checks.json"), JsonSerializer.Serialize(new { checks, scope = "real local TLS loopback and real installed MSVC; two-machine run still required" }, Wire.Json));
     }
 
-    private static void VerifyObject(string compiler, string directory, int expected)
+    internal static async Task NativePchContracts(Client client, string identity, string compiler, string directory, CancellationToken token)
+    {
+        string input = Directory.CreateDirectory(Path.Combine(directory, "original-input")).FullName;
+        foreach (string name in new[] { "src", "first", "second", "generated" }) Directory.CreateDirectory(Path.Combine(input, name));
+        File.WriteAllText(Path.Combine(input, "src", "pch.h"), "#pragma once\n#include <selected.h>\n#include <value.h>\ninline constexpr int answer=SELECTED+GENERATED+DEFINED+FORCED;\n");
+        File.WriteAllText(Path.Combine(input, "src", "pch.cpp"), "#include \"pch.h\"\nextern \"C\" int producer_value(){return answer;}\n");
+        File.WriteAllText(Path.Combine(input, "src", "main.cpp"), "#include \"pch.h\"\nextern \"C\" int producer_value();\nextern \"C\" int dbe_probe(){return producer_value();}\n");
+        File.WriteAllText(Path.Combine(input, "first", "selected.h"), "#define SELECTED 10\n");
+        File.WriteAllText(Path.Combine(input, "second", "selected.h"), "#error INCORRECT_INCLUDE_ORDER\n");
+        File.WriteAllText(Path.Combine(input, "first", "forced.h"), "#define FORCED 4\n");
+        Request Manifest() => new(4, "compile", Guid.NewGuid().ToString("N"), identity, "src/main.cpp",
+            Directory.GetFiles(input, "*", SearchOption.AllDirectories).Select(p => new InputFile(
+                Path.GetRelativePath(input, p).Replace('\\', '/'), new FileInfo(p).Length, Wire.HashFile(p))).ToArray(),
+            ["/utf-8", "/std:c++20", "/Zi", "/Od", "/GS-", "/DDEFINED=8", "/Ifirst", "/Isecond", "/Igenerated", "/FIforced.h"],
+            new PchPair("src/pch.cpp", "pch.h"));
+        foreach (var test in new[] { ("initial", 20, 42), ("changed", 21, 43), ("error", 0, 0), ("recovery", 22, 44) })
+        {
+            File.WriteAllText(Path.Combine(input, "generated", "value.h"), test.Item1 == "error" ?
+                "#error NATIVE_PCH_GENERATED_ERROR\n" : "#define GENERATED " + test.Item2 + "\n");
+            string output = Path.Combine(directory, "native-pch-" + test.Item1);
+            Reply reply = await client.Compile(Manifest(), input, output, token);
+            if (test.Item1 == "error")
+            {
+                string diagnostics = Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(output, "stdout.bin")));
+                Check(reply.Status == "compile-error" && diagnostics.Contains("NATIVE_PCH_GENERATED_ERROR") &&
+                    reply.Output is null && reply.ProducerObject is null && reply.Pdb is null, "native-pch-producer-error-no-partial-results");
+            }
+            else
+            {
+                Check(reply.Status == "completed" && reply.ProducerObject is not null && reply.Pdb is not null, "native-pch-artifacts-" + test.Item1);
+                VerifyObject(compiler, output, test.Item3, true);
+                Check(true, "native-pch-ordered-includes-macros-forced-header-execution-" + test.Item1);
+            }
+        }
+        Request valid = Manifest();
+        File.AppendAllText(Path.Combine(input, "src", "main.cpp"), "#error NATIVE_PCH_CONSUMER_ERROR\n");
+        string failedConsumer = Path.Combine(directory, "native-pch-consumer-error");
+        Reply failure = await client.Compile(Manifest(), input, failedConsumer, token);
+        Check(failure.Status == "compile-error" && failure.Output is null && failure.ProducerObject is null && failure.Pdb is null &&
+            Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(failedConsumer, "stdout.bin"))).Contains("NATIVE_PCH_CONSUMER_ERROR"),
+            "native-pch-consumer-error-no-producer-published");
+        foreach (var options in new[] { new[] { "/utf-8", "/IC:/outside" }, new[] { "/utf-8", "/P" }, new[] { "/utf-8", "/Y-" }, new[] { "/utf-8", "/FC" } })
+        {
+            bool rejected = false;
+            try { Wire.Validate(valid with { Options = options }); } catch (Rejected) { rejected = true; }
+            Check(rejected, "native-pch-reject-unsupported-" + options[1]);
+        }
+    }
+
+    private static void VerifyObject(string compiler, string directory, int expected, bool producer = false)
     {
         File.WriteAllText(Path.Combine(directory, "verify.cpp"), $"extern \"C\" int dbe_probe(); extern \"C\" int entry(){{return dbe_probe()=={expected}?0:1;}}\n");
         Directory.CreateDirectory(Path.Combine(directory, "tmp"));
         Execution compile = Native.Run(compiler, directory, "/nologo /c /GS- /O2 /X /Foverify.obj verify.cpp", 10, 2048, CancellationToken.None);
         if (compile.Kind != 0 || compile.ExitCode != 0) throw new Exception("Object verifier compilation failed");
         Execution link = Native.Run(Path.Combine(Path.GetDirectoryName(compiler)!, "link.exe"), directory,
-            "/nologo /nodefaultlib /debug /pdb:verify.pdb /entry:entry /subsystem:console /out:verify.exe verify.obj result.obj", 10, 2048, CancellationToken.None);
+            "/nologo /nodefaultlib /debug /pdb:verify.pdb /entry:entry /subsystem:console /out:verify.exe verify.obj result.obj" + (producer ? " producer.obj" : ""), 10, 2048, CancellationToken.None);
         if (link.Kind != 0 || link.ExitCode != 0) throw new Exception("Object verifier linking failed: " + Encoding.UTF8.GetString(link.Stdout));
         if (!File.Exists(Path.Combine(directory, "verify.pdb")) || Encoding.UTF8.GetString(link.Stdout).Contains("LNK4099") || Encoding.UTF8.GetString(link.Stderr).Contains("LNK4099"))
             throw new Exception("Object verifier lost debug symbols");

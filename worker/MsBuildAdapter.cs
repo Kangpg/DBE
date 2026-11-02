@@ -43,8 +43,14 @@ static partial class MsBuildAdapter
         catch (UnsupportedCompile e) { return await Fallback(config, raw, e.Message, token, scheduler); }
         int[] results = new int[batch.Length];
         var pending = new System.Collections.Concurrent.ConcurrentQueue<int>(Enumerable.Range(0, batch.Length));
-        int concurrency = scheduler is null ? 2 : scheduler.Policy.LocalSlots + scheduler.PipelineCapacity;
+        // ParseBatch preserves one common option set. Only one native Job can
+        // own its compiler PDB at a time. Keep one extra contender for required
+        // local fallback, without pre-claiming a source per unavailable core.
+        bool sharedPdb = scheduler is not null && scheduler.Policy.LocalBatchSlots > 1 && batch.Length > 0
+            && batch[0].CompilerPdb is not null && batch.All(x => x.CompilerPdb == batch[0].CompilerPdb);
+        int concurrency = scheduler is null ? 2 : (sharedPdb ? Math.Min(2, scheduler.Policy.LocalSlots) : scheduler.Policy.LocalSlots) + scheduler.PipelineCapacity;
         var compiler = new Lazy<Compiler>(() => new Compiler(config.RealCompiler));
+        var validation = new PreparedInput.ValidationCache();
         try {
         await Parallel.ForEachAsync(Enumerable.Range(0, Math.Min(concurrency, batch.Length)), new ParallelOptions
         { MaxDegreeOfParallelism = concurrency, CancellationToken = token }, async (_, ct) =>
@@ -56,11 +62,18 @@ static partial class MsBuildAdapter
             await Task.Yield(); // Let other placements start before a synchronous native compiler call.
             var indices = new List<int> { index };
             if (placement is { IsLocal: true, SlotCost: > 1 })
-                // Keep each MP child alive for a few TUs to amortize compiler
-                // startup/PCH loading. Bound the chunk so remote work and
-                // cancellation are not hidden behind a whole-project batch.
-                while (indices.Count < placement.SlotCost * 4 && pending.TryDequeue(out int next)) indices.Add(next);
-            if (indices.Count == 1) results[index] = await RunOne(config, root, invocation, ct, scheduler, placement, compiler);
+            {
+                int groupLimit = placement.SlotCost * 4;
+                if (sharedPdb)
+                {
+                    // Feed the other MP children when one TU has a long tail.
+                    // Keep a pipeline of unclaimed work for both Workers.
+                    int available = Math.Max(0, pending.Count - scheduler!.PipelineCapacity);
+                    groupLimit = Math.Clamp(available, groupLimit, placement.SlotCost * 16);
+                }
+                while (indices.Count < groupLimit && pending.TryDequeue(out int next)) indices.Add(next);
+            }
+            if (indices.Count == 1) results[index] = await RunOne(config, root, invocation, ct, scheduler, placement, compiler, validation);
             else {
                 int result = await CompileLocalBatch(config, root, indices.Select(i => batch[i]).ToArray(), placement!, ct);
                 foreach (int i in indices) results[i] = result;
@@ -71,7 +84,7 @@ static partial class MsBuildAdapter
         } finally { if (compiler.IsValueCreated) compiler.Value.Dispose(); }
     }
 
-    private static async Task<int> RunOne(AdapterConfig config, string root, ClInvocation invocation, CancellationToken token, HostScheduler? scheduler, HostScheduler.Lease? placement, Lazy<Compiler> compiler)
+    private static async Task<int> RunOne(AdapterConfig config, string root, ClInvocation invocation, CancellationToken token, HostScheduler? scheduler, HostScheduler.Lease? placement, Lazy<Compiler> compiler, PreparedInput.ValidationCache validation)
     {
         using var owned = CreateAttempt(config, root, invocation);
         string objectState = owned.ObjectState, attempt = owned.Id, attemptRoot = owned.Root;
@@ -103,9 +116,8 @@ static partial class MsBuildAdapter
         // Inherit tracker/INCLUDE and other compiler environment only on the local
         // machine. Remote execution still uses the Worker's minimal environment.
         Execution pp;
-        using (var preparation = scheduler is null ? null : await scheduler.Acquire(true, invocation.Source + " [preprocess]", token,
-            memoryMiB: scheduler.Policy.PreprocessMemoryMiB))
-            pp = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, preparation, scheduler?.Policy.LocalMemoryMiB ?? 4096);
+        using (var preparation = scheduler is null ? null : await scheduler.AcquirePreprocess(invocation.Source, token))
+            pp = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, preparation, scheduler?.Policy.LocalMemoryMiB ?? 4096, stage: "preprocess");
         Emit(pp);
         if (pp.Kind != 0 || pp.ExitCode != 0)
         {
@@ -117,7 +129,7 @@ static partial class MsBuildAdapter
             return await FallbackOne("Preprocessed input exceeds supported size");
         // /P preserves line directives. Resolve relative diagnostic source paths
         // while macros such as __FILE__ have already been expanded locally.
-        try { PreparedInput.Normalize(preprocessed, invocation); }
+        try { using var timing = BuildTiming.Measure("normalize"); PreparedInput.Normalize(preprocessed, invocation, validation); }
         catch (Exception e) when (e is UnsupportedCompile or DecoderFallbackException or EncoderFallbackException)
         { return await FallbackOne("Preprocessed input cannot be preserved: " + e.Message); }
         if (new FileInfo(preprocessed).Length > Wire.PreparedLimit) return await FallbackOne("Expanded input exceeds supported size");
@@ -167,6 +179,7 @@ static partial class MsBuildAdapter
             using var request = scheduler is null ? null : await scheduler.AcquireRemoteRequest(invocation.Source, token, placement!.ClientPath);
             deadline.CancelAfter(TimeSpan.FromSeconds(180));
             Event(attemptRoot, "remote-requested", invocation, remote.Machine);
+            using var timing = BuildTiming.Measure("remote.rpc");
             result = await client.Compile(manifest, inputs, outputRoot, deadline.Token);
         }
         catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException or OperationCanceledException or Rejected)
@@ -247,18 +260,20 @@ static partial class MsBuildAdapter
         File.WriteAllText(Path.Combine(root, status + ".json"), JsonSerializer.Serialize(value, Wire.Json));
         Console.WriteLine($"DBE: {status} {machine} {invocation.Source}");
     }
-    private static Execution Execute(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory, LocalOutput? output = null)
+    private static Execution Execute(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory, LocalOutput? output, string? stage)
     {
         token.ThrowIfCancellationRequested();
         output?.BeginExecution();
         lease?.BeginExecution();
-        Execution result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, 120, lease?.MemoryMiB ?? memory, token, true);
+        Execution result;
+        using (BuildTiming.Measure(stage ?? (BuildTiming.Enabled ? "compile.local." + (lease?.SlotCost ?? 1) : "")))
+            result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, 120, lease?.MemoryMiB ?? memory, token, true);
         output?.CompleteExecution(result);
         if (result.Kind != 5) lease?.ConfirmCleanup();
         return result;
     }
-    private static Task<Execution> ExecuteAsync(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory, LocalOutput? output = null) =>
-        Task.Factory.StartNew(() => Execute(config, raw, token, lease, memory, output), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    private static Task<Execution> ExecuteAsync(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory, LocalOutput? output = null, string? stage = null) =>
+        Task.Factory.StartNew(() => Execute(config, raw, token, lease, memory, output, stage), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     private static async Task<int> LocalBounded(AdapterConfig config, string raw, string reason, CancellationToken token, HostScheduler? scheduler)
     {
         if (scheduler is null) return Local(config, raw, reason, token);

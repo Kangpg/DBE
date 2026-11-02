@@ -8,11 +8,16 @@ namespace Dbe;
 
 sealed record InputFile(string Path, long Length, string Sha256);
 sealed record Request(int Version, string Operation, string Attempt, string? Toolchain, string? Source, InputFile[]? Files,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? Options = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? Options = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PchPair? NativePch = null)
+{
+    internal bool ReturnsPdb => Version >= 3 && Options!.Contains("/Zi");
+}
 sealed record Capabilities(string Machine, string CompilerVersion, string Toolchain, int Slots, int MemoryMiB, int TimeoutSeconds);
 sealed record Reply(string Status, string Attempt = "", string? Message = null, Capabilities? Capabilities = null,
     uint? ExitCode = null, int StdoutBytes = 0, int StderrBytes = 0, InputFile? Output = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InputFile? Pdb = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InputFile? Pdb = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InputFile? ProducerObject = null);
 sealed class Rejected(string message) : Exception(message);
 
 static partial class Wire
@@ -53,11 +58,12 @@ static partial class Wire
 
     internal static void Validate(Request request)
     {
-        if (request.Version is not (1 or 2 or 3)) throw new Rejected("Unsupported protocol version");
+        if (request.Version is not (1 or 2 or 3 or 4)) throw new Rejected("Unsupported protocol version");
         if (request.Operation == "info") return;
         if (request.Operation != "compile") throw new Rejected("Unsupported operation");
         if (request.Version == 1 && request.Options is not null) throw new Rejected("Options require protocol v2");
-        if (request.Version >= 2) CompileOptions.Validate(request.Options, request.Version);
+        if (request.Version is 2 or 3) CompileOptions.Validate(request.Options, request.Version);
+        if ((request.Version == 4) != (request.NativePch is not null)) throw new Rejected("PCH pair requires protocol v4");
         if (!Guid.TryParseExact(request.Attempt, "N", out _)) throw new Rejected("Invalid attempt id");
         if (request.Files is null || request.Files.Length is < 1 or > 64) throw new Rejected("Expected 1..64 inputs");
         if (request.Version == 3 && request.Files.Length != 1) throw new Rejected("v3 requires one preprocessed input");
@@ -81,6 +87,7 @@ static partial class Wire
                 if (paths.Contains(string.Join('/', parts.Take(i)))) throw new Rejected("File/directory path collision");
         }
         if (total > (request.Version == 3 ? PreparedLimit : TotalLimit) || !paths.Contains(request.Source)) throw new Rejected("Input budget or source mismatch");
+        request.NativePch?.Validate(request, paths);
     }
 
     internal static bool ValidHash(string? value) => value is not null && HashPattern().IsMatch(value);
