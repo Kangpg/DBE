@@ -7,9 +7,9 @@
   <PropertyGroup Condition="'$(DBEEnabled)' == 'true'">
     <CLToolPath>$(DBEAdapterDirectory)</CLToolPath>
     <CLToolExe>dbe-remote-cl.exe</CLToolExe>
-    <!-- This adapter exposes text diagnostics; local DBE.Local.targets still
-         preserves the native MSVC structured handle protocol. -->
-    <UseClStructuredOutput>false</UseClStructuredOutput>
+    <!-- The managed adapter emits text. Native Local retains the caller's
+         structured diagnostic handles. -->
+    <UseClStructuredOutput Condition="'$(DBELocal)' != 'true'">false</UseClStructuredOutput>
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
     <LinkToolPath Condition="'$(DBEHybrid)' == 'true'">$(DBEAdapterDirectory)</LinkToolPath>
     <LinkToolExe Condition="'$(DBEHybrid)' == 'true'">dbe-link.exe</LinkToolExe>
@@ -17,7 +17,16 @@
     <LIBToolExe Condition="'$(DBEHybrid)' == 'true'">dbe-lib.exe</LIBToolExe>
     <DBEIncrementalTracking Condition="'$(DBEIncrementalTracking)' == '' And ('$(DBEHybrid)' == 'true' Or '$(DBELocal)' == 'true')">true</DBEIncrementalTracking>
     <DBELocalInputs Condition="'$(DBELocal)' == 'true'">$(DBEAdapterDirectory)\dbe-remote-cl.compiler</DBELocalInputs>
+    <!-- Newer VC targets consume this property; older ones consume item metadata. -->
+    <CLDeleteOutputOnExecute Condition="'$(DBELocal)' == 'true'">true</CLDeleteOutputOnExecute>
+    <CLDeleteOutputOnExecute Condition="'$(DBELocal)' != 'true'">false</CLDeleteOutputOnExecute>
   </PropertyGroup>
+  <!-- CL runs below the launcher. Consolidate its PID-specific child logs
+       into a stable canonical log so the next MP pass can clean prior outputs. -->
+  <ItemGroup Condition="'$(DBEEnabled)' == 'true' And '$(DBELocal)' == 'true'">
+    <CLTLogReadFiles Condition="'@(CLTLogReadFiles)' == ''" Include="$(TLogLocation)dbe-remote-cl.read.1.tlog;$(TLogLocation)dbe-remote-cl-%2A.read.%2A.tlog" />
+    <CLTLogWriteFiles Condition="'@(CLTLogWriteFiles)' == ''" Include="$(TLogLocation)dbe-remote-cl.write.1.tlog;$(TLogLocation)dbe-remote-cl-%2A.write.%2A.tlog" />
+  </ItemGroup>
   <Target Name="DBEPrepareRemoteCompile" BeforeTargets="ClCompile" Condition="'$(DBEEnabled)' == 'true'">
     <PropertyGroup><DBESelectedCompiler>$([System.IO.Path]::GetFullPath('$(VCToolsInstallDir)bin\Hostx64\x64\cl.exe'))</DBESelectedCompiler></PropertyGroup>
     <Error Condition="!Exists('$(DBEAdapterDirectory)\dbe-remote-cl.exe') Or !Exists('$(DBEAdapterDirectory)\msbuild.json')" Text="DBEAdapterDirectory must contain the configured MSBuild adapter." />
@@ -25,6 +34,7 @@
     <Error Condition="'$(PlatformToolset)' != 'v143'" Text="DBE remote adapter currently requires the explicitly configured v143 toolchain." />
     <Error Condition="'$(DBEConfiguredCompiler)' == '' Or '$(DBESelectedCompiler)' != '$(DBEConfiguredCompiler)'" Text="The project-selected compiler differs from this adapter configuration. Create an adapter for the selected toolchain." />
     <DbeInputInventory Condition="'$(DBEIncrementalTracking)' == 'true'" ProjectDirectory="$(MSBuildProjectDirectory)"
+        NativeLocal="$([System.String]::Equals('$(DBELocal)', 'true'))"
         StateFile="$(IntDir)dbe-input-inventory.txt" Sources="@(ClCompile)" TrackerDirectory="$(TLogLocation)"
         ObservedInputExclusions="$(ExcludePath);$(SystemRoot);$(windir);$([System.IO.Path]::GetDirectoryName('$(DBEConfiguredCompiler)'));$(DBERuntimeDirectories)"
         SearchRoots="$(IncludePath);$(ExternalIncludePath);@(ClCompile->'%(AdditionalIncludeDirectories)');@(ClCompile->'%(ExternalIncludePath)')"
@@ -34,12 +44,17 @@
       <Output TaskParameter="Changed" PropertyName="DBEInputMembershipChanged" />
       <Output TaskParameter="Fingerprint" PropertyName="DBEInputFingerprint" />
       <Output TaskParameter="TrackedExclusions" ItemName="DBETrackedExclusions" />
+      <Output TaskParameter="InvalidatedObjects" ItemName="DBEInvalidatedObjects" />
     </DbeInputInventory>
+    <!-- Retire only objects both declared and observed before invalidating
+         the MP command. On failure an old object must not survive the pass. -->
+    <Delete Files="@(DBEInvalidatedObjects);$(TLogLocation)dbe-remote-cl.command.1.tlog"
+            Condition="'$(DBELocal)' == 'true' and '$(DBEInputMembershipChanged)' == 'true' and '$(TLogLocation)' != ''" />
     <ItemGroup>
       <ClCompile Update="@(ClCompile)">
         <!-- Hybrid/Local preserve native content/command tracking and invalidate
              include membership changes. Other modes keep full revalidation. -->
-        <MinimalRebuildFromTracking Condition="'$(DBEIncrementalTracking)' != 'true' Or '$(DBEInputMembershipChanged)' == 'true'">false</MinimalRebuildFromTracking>
+        <MinimalRebuildFromTracking Condition="'$(DBEIncrementalTracking)' != 'true' Or ('$(DBEInputMembershipChanged)' == 'true' And '$(DBELocal)' != 'true')">false</MinimalRebuildFromTracking>
         <ExcludedInputPaths>@(DBETrackedExclusions);%(ClCompile.ExcludedInputPaths)</ExcludedInputPaths>
         <DeleteOutputBeforeExecute Condition="'$(DBELocal)' != 'true'">false</DeleteOutputBeforeExecute>
         <DeleteOutputBeforeExecute Condition="'$(DBELocal)' == 'true'">true</DeleteOutputBeforeExecute>

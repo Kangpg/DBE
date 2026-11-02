@@ -39,13 +39,13 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 4694,
-      "sha256": "44b2d7221f7cc613c132ebb2371ee9b9321f17383979ed879f347e915d5f7207"
+      "bytes": 5076,
+      "sha256": "4fc5543a6c7a8248ca88117eb5a655064329ec1f78c04ead1245259fc016cec7"
     },
     {
       "file": "docs/usage.md",
-      "bytes": 2214,
-      "sha256": "0f525c758b377fcb3478b86f14d1722a6e34bd057f13fb2b70cf8ad757b57cd7"
+      "bytes": 4183,
+      "sha256": "7be9d9f91db3457c6c8c4cb1c91b2d1e66032a6313a5a2ff24de0a2564385f93"
     },
     {
       "file": "docs/worker-install.md",
@@ -104,13 +104,13 @@
     },
     {
       "file": "msbuild/DBE.Remote.targets",
-      "bytes": 5689,
-      "sha256": "588d6484d9da748d25993736b93b6b8ccff33817459d01b2193ad66f094937c1"
+      "bytes": 7116,
+      "sha256": "b8b189596320ae2d185358fe54c5f9ecdc74d5962507a671e09bf24ea1726e0e"
     },
     {
       "file": "msbuild/DbeInputInventory.cs",
-      "bytes": 6493,
-      "sha256": "9789007e1619ecccfcb67d293526ff5f38b113231574d13559aa3fc1ff90c7aa"
+      "bytes": 8465,
+      "sha256": "47ff37ff805f1efcab9ae0b9d82f3fd27002fad5e8747e696dad8148289ad252"
     },
     {
       "file": "native/build-host.cpp",
@@ -139,8 +139,8 @@
     },
     {
       "file": "README.md",
-      "bytes": 1937,
-      "sha256": "23a1c19ef87679e8b0d666a56b4054fe3740199805bacb7867735e7a41069748"
+      "bytes": 1998,
+      "sha256": "adca10bf054063bc3e7bb35321fa6d8bd1758432d1e6a2c74cce7a4d1f024ff4"
     },
     {
       "file": "scripts/Allow-WorkerFirewall.ps1",
@@ -184,8 +184,8 @@
     },
     {
       "file": "scripts/New-MSBuildAdapter.ps1",
-      "bytes": 4579,
-      "sha256": "5473b1994b6378ccd83fbd30862adc348d2d5d00b496369d37a4c26d93910351"
+      "bytes": 4655,
+      "sha256": "d24062bbd7c151d5d460d7d0a269566db7551e619a7575fde33a28e1a636e029"
     },
     {
       "file": "scripts/Package-VisualStudioExtension.ps1",
@@ -201,6 +201,11 @@
       "file": "scripts/Package-WorkerUpgrade.ps1",
       "bytes": 2355,
       "sha256": "abb9a4353466f285ca5cf4beb1e568d4e053f2e4c663e2bc9712b40fa4e1d95b"
+    },
+    {
+      "file": "scripts/Set-NormalBuild.ps1",
+      "bytes": 5036,
+      "sha256": "110f750360307f79ca77cfcb64418c284981ce2585943c2b4b61497f870e3f5d"
     },
     {
       "file": "scripts/Test-BuildHost.ps1",
@@ -226,6 +231,11 @@
       "file": "scripts/Test-MSBuildBaseline.ps1",
       "bytes": 5407,
       "sha256": "b6ff8ad863d3b28b727e6ee8269145e0250e0244e9ca1059f5e67255b0e924ad"
+    },
+    {
+      "file": "scripts/Test-NormalBuild.ps1",
+      "bytes": 7447,
+      "sha256": "79060fa9db701b790d8044e978730e4e0a0eafff98d9a2fb9f0efe8c1dcc6d13"
     },
     {
       "file": "scripts/Test-RemoteMSBuild.ps1",
@@ -264,13 +274,13 @@
     },
     {
       "file": "scripts/Toolchain.ps1",
-      "bytes": 1231,
-      "sha256": "55c54d4d346ebf6b542365d52b2350d7d891625f0f581fc9800a031339598a38"
+      "bytes": 1268,
+      "sha256": "2ec8146ae48e80854da5dc856fa3a5735007e5995df14f7813e7e959f8167cfb"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 6175,
-      "sha256": "2a4dd98dd4547df082149303c1da4ac08c026872faf92c00161a43d085692e37"
+      "bytes": 6811,
+      "sha256": "e900833a4204ac03dcca9d45a76908b249b582e475769868337bbbfce1e599e6"
     },
     {
       "file": "tests/child-probe.cpp",

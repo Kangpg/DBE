@@ -21,6 +21,8 @@ public sealed class DbeInputInventory : Task
     public string TrackerDirectory { get; set; }
     public string[] ObservedInputExclusions { get; set; }
     public string[] TrackedRuntimeRoots { get; set; }
+    public bool NativeLocal { get; set; }
+    [Output] public string[] InvalidatedObjects { get; set; } = new string[0];
     [Output] public string[] TrackedExclusions { get; set; }
     [Output] public bool Changed { get; set; }
     [Output] public string Fingerprint { get; set; }
@@ -42,6 +44,36 @@ public sealed class DbeInputInventory : Task
         }
         if (quoted) throw new IOException("Unbalanced include path quotes");
         yield return path.ToString();
+    }
+    // Only invalidate objects observed as compiler outputs for the same
+    // declared sources. MP writes may be recorded under a composite root.
+    private string[] LocalObjects()
+    {
+        var expected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in Sources ?? new ITaskItem[0]) {
+            if (String.Equals(item.GetMetadata("ExcludedFromBuild"), "true", StringComparison.OrdinalIgnoreCase)) continue;
+            var name = item.GetMetadata("ObjectFileName");
+            if (String.IsNullOrWhiteSpace(name)) continue;
+            if (name.EndsWith("\\") || name.EndsWith("/"))
+                name = Path.Combine(name, Path.GetFileNameWithoutExtension(item.ItemSpec) + ".obj");
+            expected[Full(item.ItemSpec)] = Full(name);
+        }
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var directory = Full(TrackerDirectory);
+        if (!Directory.Exists(directory)) return new string[0];
+        foreach (var log in Directory.EnumerateFiles(directory, "dbe-remote-cl*.write.*.tlog")) {
+            var active = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var line in File.ReadLines(log, Encoding.Unicode)) {
+                if (line.StartsWith("^", StringComparison.Ordinal)) {
+                    active.Clear();
+                    foreach (var source in line.Substring(1).Split('|')) {
+                        string output;
+                        if (expected.TryGetValue(source, out output)) active.Add(output);
+                    }
+                } else if (active.Contains(line) && File.Exists(line)) result.Add(line);
+            }
+        }
+        return result.ToArray();
     }
     public override bool Execute()
     {
@@ -98,6 +130,7 @@ public sealed class DbeInputInventory : Task
                 Fingerprint = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(String.Join("\n", entries))));
             }
             Changed = !File.Exists(StateFile) || File.ReadAllText(StateFile).Trim() != Fingerprint;
+            if (Changed && NativeLocal && !String.IsNullOrEmpty(TrackerDirectory)) InvalidatedObjects = LocalObjects();
         }
         catch (Exception error)
         {

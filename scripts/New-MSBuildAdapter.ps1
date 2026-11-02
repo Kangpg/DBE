@@ -7,13 +7,14 @@ param(
     [string]$HostPolicy,
     [string]$StateDirectory='state',
     [string[]]$AdditionalClients=@(),
-    [switch]$AllowCompilerMismatch
+    [switch]$AllowCompilerMismatch,
+    [ValidateSet('2022','2026')][string]$VisualStudio='2022'
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'Toolchain.ps1')
-$tools=Get-DbeToolchain '2022' (Join-Path $root 'native\dbe-cl.vcxproj')
+$tools=Get-DbeToolchain $VisualStudio (Join-Path $root 'native\dbe-cl.vcxproj') 'v143'
 if(Test-Path -LiteralPath $Destination) { throw 'Adapter destination must be new.' }
 if($Mode -eq 'Hybrid' -and !$HostPolicy){throw 'Hybrid mode requires the shared HostPolicy file.'}
 if(!$PublishDirectory) { $PublishDirectory=(& (Join-Path $PSScriptRoot 'Build-Worker.ps1') -SelfContained).Directory }

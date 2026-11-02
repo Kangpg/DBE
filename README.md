@@ -6,7 +6,7 @@ Windows MSVC C++ 빌드를 요청 PC와 여러 Worker에 배정하는 실험 프
 
 - [설치](docs/installation.md): 소스 빌드, Worker 패키지, VSIX.
 - [연결](docs/connection.md): 인증 pair, 여러 Worker, 솔루션 설정.
-- [사용법](docs/usage.md): 프로젝트/솔루션 빌드, 취소, 로그.
+- [사용법](docs/usage.md): 프로젝트 파일 수정 없이 일반 VS Build에 연결, 프로젝트/솔루션 빌드, 취소, 로그.
 - [구조와 한계](docs/design.md), [이슈 추적](docs/issues.md), [개발 지침](AGENTS.md).
 
 Windows x64, PowerShell 7, VS 2022 C++ v143/Windows SDK, `worker/global.json`의 .NET SDK를 사용한다. Incredibuild나 별도 역공학 도구는 필요하지 않다.

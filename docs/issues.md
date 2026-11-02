@@ -49,6 +49,8 @@ compiler 버전/identity와 실제 queue/receive/compile/return 상태를 표시
 
 도구 선택과 preflight를 정리하고 새 환경에서 문서만으로 build→pair→Worker→VSIX→합성 fixture를 검증한다. 사용자 목표는 프로젝트 파일·컴파일 옵션·PCH를 변경하지 않고 설치 후 빌드 명령을 사용하는 것이다. compiler/configuration 자동 탐색과 설치 과정의 Worker 연결을 통해 반복적인 수동 경로 설정을 없앤다. 현재 문서/구문 검사만으로 새 머신 설치 성공이나 이 사용 흐름의 완성을 주장하지 않는다.
 
+일반 VS Build는 사용자별 솔루션 등록으로 연결할 수 있다. VS 2026 기본 Build에서 합성 PCH/MP 프로젝트의 Local 빌드, 무변경, 컴파일 오류, 기본 취소와 복구를 확인했다. 같은 명령에서 동일 compiler의 루프백 TLS Worker와 로컬 분배도 확인했다. 새 머신 자동 설치와 Worker 페어링은 후속 작업이다.
+
 ## 해결 이력
 
 - wrapper의 caller handle 상속으로 MSVC 진단 보존.
