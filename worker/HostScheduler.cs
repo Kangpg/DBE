@@ -5,6 +5,8 @@ using System.Text.Json;
 
 namespace Dbe;
 
+// Local memory fields reserve admission capacity; WorkerConfig owns incoming
+// hard Job memory limits. Reservations do not constrain the initiator's heap.
 sealed record HostPolicy(int LocalSlots = 4, int RemoteSlots = 2, int LocalMemoryMiB = 4096,
     int ReserveMemoryMiB = 8192, int WaitSeconds = 1200, int CpuBusyPercent = 85, int LinkMemoryMiB = 0, int LocalBatchSlots = 1,
     int PreprocessMemoryMiB = 0, int LocalBatchMemoryMiB = 0);
@@ -238,7 +240,7 @@ sealed class HostScheduler : IDisposable
         internal string? ClientPath => worker?.ClientPath;
         internal int Index => index;
         internal int SlotCost => files.Length;
-        internal int MemoryMiB => memoryMiB;
+        internal int ReservationMiB => memoryMiB;
         internal void BeginExecution() => confirmed = false;
         internal void ConfirmCleanup() => confirmed = true;
         public void Dispose()

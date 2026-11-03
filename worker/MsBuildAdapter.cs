@@ -24,14 +24,14 @@ static partial class MsBuildAdapter
     {
         var (config, _) = AdapterConfig.Read(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
         using var scheduler = new HostScheduler(config.HostPolicy ?? throw new Rejected("Build tool requires host policy"), config.Clients);
-        int memory = tool == "link" && scheduler.Policy.LinkMemoryMiB > 0 ? scheduler.Policy.LinkMemoryMiB : scheduler.Policy.LocalMemoryMiB;
-        int slots = (memory + scheduler.Policy.LocalMemoryMiB - 1) / scheduler.Policy.LocalMemoryMiB;
-        using var lease = await scheduler.Acquire(true, tool + " " + Environment.CurrentDirectory, token, slotCost: slots, memoryMiB: memory);
+        int reservationMiB = tool == "link" && scheduler.Policy.LinkMemoryMiB > 0 ? scheduler.Policy.LinkMemoryMiB : scheduler.Policy.LocalMemoryMiB;
+        int slots = (reservationMiB + scheduler.Policy.LocalMemoryMiB - 1) / scheduler.Policy.LocalMemoryMiB;
+        using var lease = await scheduler.Acquire(true, tool + " " + Environment.CurrentDirectory, token, slotCost: slots, memoryMiB: reservationMiB);
         string executable = Path.Combine(Path.GetDirectoryName(config.RealCompiler)!, tool + ".exe");
         Console.WriteLine("DBE: local " + tool + " " + Environment.CurrentDirectory);
         lease.BeginExecution();
         Execution result = await Task.Factory.StartNew(() => Native.Run(executable, Environment.CurrentDirectory, ClInvocation.RawTail(),
-            LocalExecutionSeconds, memory, token, true), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            LocalExecutionSeconds, 0, token, true), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         if (result.Kind != 5) lease.ConfirmCleanup();
         Emit(result);
         return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail(tool + " supervisor kind=" + result.Kind);
@@ -145,7 +145,7 @@ static partial class MsBuildAdapter
         // machine. Remote execution still uses the Worker's minimal environment.
         Execution pp;
         using (var preparation = scheduler is null ? null : await scheduler.AcquirePreprocess(invocation.Source, token))
-            pp = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, preparation, scheduler?.Policy.LocalMemoryMiB ?? 4096, stage: "preprocess");
+            pp = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, preparation, stage: "preprocess");
         Emit(pp);
         if (pp.Kind != 0 || pp.ExitCode != 0)
         {
@@ -273,7 +273,7 @@ static partial class MsBuildAdapter
         Event(attemptRoot, kind + "-running", invocation, Environment.MachineName);
         try
         {
-            Execution result = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, placement, scheduler.Policy.LocalMemoryMiB, output);
+            Execution result = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, placement, output);
             Emit(result);
             if (result.Kind != 0 || result.ExitCode != 0)
             {
@@ -298,26 +298,28 @@ static partial class MsBuildAdapter
         File.WriteAllText(Path.Combine(root, status + ".json"), JsonSerializer.Serialize(value, Wire.Json));
         Console.WriteLine($"DBE: {status} {machine} {invocation.Source}");
     }
-    private static Execution Execute(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory, LocalOutput? output, string? stage)
+    private static Execution Execute(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, LocalOutput? output, string? stage)
     {
         token.ThrowIfCancellationRequested();
         output?.BeginExecution();
         lease?.BeginExecution();
         Execution result;
         using (BuildTiming.Measure(stage ?? (BuildTiming.Enabled ? "compile.local." + (lease?.SlotCost ?? 1) : "")))
-            result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, lease?.MemoryMiB ?? memory, token, true);
+            // Admission reservations are estimates, not compiler heap limits.
+            // The initiating user's compiler retains its native allocation behavior.
+            result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, 0, token, true);
         output?.CompleteExecution(result);
         if (result.Kind != 5) lease?.ConfirmCleanup();
         return result;
     }
-    private static Task<Execution> ExecuteAsync(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, int memory, LocalOutput? output = null, string? stage = null) =>
-        Task.Factory.StartNew(() => Execute(config, raw, token, lease, memory, output, stage), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    private static Task<Execution> ExecuteAsync(AdapterConfig config, string raw, CancellationToken token, HostScheduler.Lease? lease, LocalOutput? output = null, string? stage = null) =>
+        Task.Factory.StartNew(() => Execute(config, raw, token, lease, output, stage), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     private static async Task<int> LocalBounded(AdapterConfig config, string raw, string reason, CancellationToken token, HostScheduler? scheduler)
     {
         if (scheduler is null) return Local(config, raw, reason, token);
         using var lease = await scheduler.Acquire(true, reason, token, ClInvocation.PdbIdentity(ClInvocation.Expand(ClInvocation.Split(raw))));
         Console.WriteLine("DBE: local (" + reason + ")");
-        Execution result = await ExecuteAsync(config, raw + " /MP1", token, lease, scheduler.Policy.LocalMemoryMiB);
+        Execution result = await ExecuteAsync(config, raw + " /MP1", token, lease);
         Emit(result);
         return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail("Local compiler supervisor kind=" + result.Kind);
     }
@@ -329,7 +331,7 @@ static partial class MsBuildAdapter
     {
         token.ThrowIfCancellationRequested();
         Console.WriteLine("DBE: local (" + reason + ")");
-        Execution result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, 4096, token, true);
+        Execution result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, 0, token, true);
         Emit(result);
         return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail("Local compiler supervisor kind=" + result.Kind);
     }

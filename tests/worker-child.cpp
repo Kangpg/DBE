@@ -13,6 +13,12 @@ int wmain(int argc, wchar_t** argv) {
     if (argc > 1 && wcscmp(argv[1], L"--leaf") == 0) { Sleep(60000); return 0; }
     if (argc > 1 && wcscmp(argv[1], L"--exit") == 0) ExitProcess(0xC000013A);
     if (argc > 1 && wcscmp(argv[1], L"--priority") == 0) { std::printf("%lu", GetPriorityClass(GetCurrentProcess())); return 0; }
+    if (argc > 1 && wcscmp(argv[1], L"--commit") == 0) {
+        void* block = VirtualAlloc(nullptr, static_cast<SIZE_T>(384) * 1024 * 1024, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        if (!block) return ERROR_NOT_ENOUGH_MEMORY;
+        VirtualFree(block, 0, MEM_RELEASE);
+        return 0;
+    }
     if (argc > 1 && wcscmp(argv[1], L"--flood") == 0) {
         char bytes[4096]{}; DWORD sent;
         for (int i = 0; i < 600; ++i) WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), bytes, sizeof(bytes), &sent, nullptr);

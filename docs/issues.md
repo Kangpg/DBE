@@ -58,6 +58,8 @@ compiler 버전/identity와 실제 queue/receive/compile/return 상태를 표시
 
 ## 해결 이력
 
+- 0.2.3: NLS 복사본의 읽기 전용 속성 상속으로 컨텍스트 축출이 실패하는 원인을 수정했다. 검증한 소유 캐시만 정규화하며 호스트 원본은 보존한다. 로컬 fallback의 예약량이 강제 힙 한도로 적용돼 발생한 C1060도 분리·수정했다. 실제 실패 파일의 재컴파일은 성공했으며 전체 링크·무변경 검증은 남아 있다.
+
 - [DBE-001](https://github.com/Kangpg/DBE/issues/1) 긴 MP 출력 경로의 C1083/D8040을 수정했다. 합성 오류·취소 회귀 후 현재 프로젝트 전체 Hybrid 빌드와 최종 링크를 두 회차에서 확인했다.
 
 - wrapper의 caller handle 상속으로 MSVC 진단 보존.

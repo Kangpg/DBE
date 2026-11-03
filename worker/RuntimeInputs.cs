@@ -97,25 +97,36 @@ sealed class RuntimeInputs(string compiler, string root) : IDisposable
         foreach (string source in Directory.GetFiles(system, "*.nls"))
         {
             string name = Path.GetFileName(source), target = Path.Combine(root, name);
-            if (!File.Exists(target)) File.Copy(source, target);
-            var pin = new FileStream(target, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (Wire.HashFile(source) != Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(pin)))
-            { pin.Dispose(); throw new Rejected("NLS cache mismatch"); }
-            pins.Add(pin); result.Add(new RuntimeFile(target, "System32/" + name));
+            pins.Add(PinDataCopy(source, target)); result.Add(new RuntimeFile(target, "System32/" + name));
         }
         string sorting = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Globalization", "Sorting");
         if (Directory.Exists(sorting))
         foreach (string source in Directory.GetFiles(sorting, "*.nls"))
         {
             string target = Path.Combine(root, "sorting-" + Path.GetFileName(source));
-            Wire.NoReparse(source); Wire.NoReparse(target);
-            if (!File.Exists(target)) File.Copy(source, target);
-            var pin = new FileStream(target, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (Wire.HashFile(source) != Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(pin)))
-            { pin.Dispose(); throw new Rejected("Sorting runtime cache mismatch"); }
-            pins.Add(pin); result.Add(new RuntimeFile(target, "Globalization/Sorting/" + Path.GetFileName(source)));
+            pins.Add(PinDataCopy(source, target)); result.Add(new RuntimeFile(target, "Globalization/Sorting/" + Path.GetFileName(source)));
         }
         return result.ToArray();
+    }
+    private static FileStream PinDataCopy(string source, string target)
+    {
+        Wire.NoReparse(source); Wire.NoReparse(target);
+        using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+        string hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(input));
+        if (!File.Exists(target))
+        {
+            input.Position = 0;
+            using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            input.CopyTo(output); // Copy bytes, never the host file's ReadOnly attribute.
+        }
+        if (new FileInfo(target).Length != input.Length || Wire.HashFile(target) != hash) throw new Rejected("Runtime data cache mismatch");
+        // Normalize an owned, validated cache copy left by an older runtime.
+        var attributes = File.GetAttributes(target);
+        if ((attributes & FileAttributes.ReadOnly) != 0) File.SetAttributes(target, attributes & ~FileAttributes.ReadOnly);
+        var pin = new FileStream(target, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (pin.Length != input.Length || Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(pin)) != hash)
+        { pin.Dispose(); throw new Rejected("Pinned runtime data changed"); }
+        return pin;
     }
     public void Dispose() { foreach (var pin in pins) pin.Dispose(); }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

@@ -14,11 +14,17 @@ static class NativeReuseSelfTest
         var checks = new List<string>();
         void Check(bool value, string name) { if (!value) throw new Exception("FAIL " + name); checks.Add(name); Console.WriteLine("PASS " + name); }
         Worker? worker = null; Task server = Task.CompletedTask; string? contexts = null;
+        string? inheritedRuntime = null, hostRuntime = null; FileAttributes hostAttributes = default;
         ClientConfig cc; string cr;
         if (clientConfig is null)
         {
             string pair = Path.Combine(directory, "pair"); Identity.CreatePair(pair, compilerPath, "127.0.0.1");
             var (wc, wr) = Identity.ReadConfig<WorkerConfig>(Path.Combine(pair, "worker", "worker.json"));
+            hostRuntime = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Globalization", "Sorting", "SortDefault.nls");
+            hostAttributes = File.GetAttributes(hostRuntime);
+            string runtimeCache = Directory.CreateDirectory(Path.Combine(wr, wc.StateDirectory, "runtime-cache")).FullName;
+            inheritedRuntime = Path.Combine(runtimeCache, "sorting-SortDefault.nls");
+            File.Copy(hostRuntime, inheritedRuntime); File.SetAttributes(inheritedRuntime, File.GetAttributes(inheritedRuntime) | FileAttributes.ReadOnly);
             worker = new Worker(wc with { Port = 0 }, wr); worker.Start(); server = worker.Serve();
             (cc, cr) = Identity.ReadConfig<ClientConfig>(Path.Combine(pair, "client", "client.json"));
             cc = cc with { Port = worker.Port }; contexts = Path.Combine(wr, wc.StateDirectory, "ctx");
@@ -87,6 +93,9 @@ static class NativeReuseSelfTest
             File.Copy(environment.Resolve(Recipe(generation).ObjectFile!), Path.Combine(original, "producer.obj"));
             first = await Task.WhenAll(Submit(initial, "alpha", symbols), Submit(Manifest("beta.cpp"), "beta", symbols));
             Check(first.All(x => x.Reply.Status == "completed" && x.Reply.ProducerPdb is not null), "parallel-consumers-return-independent-PDBs");
+            if (inheritedRuntime is not null)
+                Check((File.GetAttributes(inheritedRuntime) & FileAttributes.ReadOnly) == 0 && File.GetAttributes(hostRuntime!) == hostAttributes,
+                    "owned-runtime-copy-normalizes-readonly-without-host-mutation");
             long pchBuilds = first[0].Reply.Cache!.PchBuilds, inputBuilds = first[0].Reply.Cache!.InputBuilds;
             Check(first.All(x => x.Reply.Cache!.InputBuilds == inputBuilds && x.Reply.Cache.PchBuilds == pchBuilds) &&
                 (worker is null || (pchBuilds == 1 && inputBuilds == 1)), "parallel-consumers-build-input-tree-and-PCH-once");

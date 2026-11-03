@@ -117,8 +117,7 @@ static partial class MsBuildAdapter
             File.WriteAllText(response, string.Join(' ', LocalCommand(sources[0], staging + Path.DirectorySeparatorChar,
                 placement.SlotCost, commandSources).Select(ClInvocation.Quote)), Encoding.Unicode);
             for (int i = 0; i < sources.Length; i++) Event(attempts[i].Root, "local-batch-running", sources[i], Environment.MachineName);
-            var result = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, placement,
-                placement.MemoryMiB, output);
+            var result = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, placement, output);
             Emit(result);
             if (result.Kind != 0 || result.ExitCode != 0)
             {

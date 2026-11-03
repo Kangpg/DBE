@@ -135,7 +135,7 @@ static class SchedulerSelfTest
             using var other = await scheduler.AcquireCompile("next TU", default, "shared MP PDB", 3);
             Check(group.IsLocal && group.SlotCost == 2 && preparation.IsLocal && !other.IsLocal,
                 "MP-group-reserves-its-cores-and-leaves-a-preprocessing-slot");
-            Check(group.MemoryMiB == 768 && preparation.MemoryMiB == 256 && scheduler.ReservedMemoryMiB() == 1024,
+            Check(group.ReservationMiB == 768 && preparation.ReservationMiB == 256 && scheduler.ReservedMemoryMiB() == 1024,
                 "CPU-slots-and-stage-memory-are-accounted-independently");
         }
         string malformed = Path.Combine(directory, "leases", "local-0.lease");

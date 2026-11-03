@@ -66,6 +66,7 @@ static class Native
 
     internal static Execution Run(string exe, string cwd, string args, int seconds, int memoryMiB, CancellationToken token, bool inheritEnvironment = false, string? tempDirectory = null, string? mapping = null, string? logicalCwd = null, string? include = null)
     {
+        if (memoryMiB < 0) throw new Rejected("Invalid process memory limit");
         using var cancel = new EventWaitHandle(false, EventResetMode.ManualReset);
         using var registration = token.Register(() => cancel.Set());
         var environment = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)

@@ -301,6 +301,10 @@ static class SelfTest
     {
         var priority = Native.Run(child, directory, "--priority", 5, 256, token);
         Check(priority.Kind == 0 && priority.ExitCode == 0 && Encoding.ASCII.GetString(priority.Stdout) == "16384", "native-below-normal-priority");
+        var limited = Native.Run(child, directory, "--commit", 5, 256, token);
+        var initiating = Native.Run(child, directory, "--commit", 5, 0, token);
+        Check(limited.Kind == 0 && limited.ExitCode == 8 && initiating.Kind == 0 && initiating.ExitCode == 0,
+            "initiator-native-heap-and-incoming-job-memory-limit-are-distinct");
         string rawArgs = "one \"two words\" \"\" \"한글\" \"tail\\\\\" \"a\\\"b\" plain\\\\path";
         Execution argv = Native.Run(child, directory, "--args " + rawArgs, 5, 256, token);
         string expectedArgs = string.Join("\n", ClInvocation.Split(rawArgs).Select(a => string.Concat(a.Select(c => ((int)c).ToString("x4"))))) + "\n";

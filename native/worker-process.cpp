@@ -49,8 +49,8 @@ void execute(const wchar_t* exe, const wchar_t* cwd, const wchar_t* args, const 
     owner.job.reset(CreateJobObjectW(nullptr, nullptr));
     if (!owner.job.valid()) { failure(); return; }
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
-        JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+    if (memoryMiB) limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_JOB_MEMORY;
     limits.BasicLimitInformation.ActiveProcessLimit = 8;
     limits.JobMemoryLimit = static_cast<SIZE_T>(memoryMiB) * 1024 * 1024;
     if (!SetInformationJobObject(owner.job.get(), JobObjectExtendedLimitInformation, &limits, sizeof(limits)) ||
