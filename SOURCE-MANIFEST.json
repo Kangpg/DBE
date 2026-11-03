@@ -14,18 +14,28 @@
     },
     {
       "file": "AGENTS.md",
-      "bytes": 1555,
-      "sha256": "2eac1052ac7a319a2c58a7a00d23856a962d49e5bbda413a52b83f82b8d03982"
+      "bytes": 2131,
+      "sha256": "ba8e882d5253ea05dac8f5fafe1eace75d0c1bf819dbfe6e0837e911ac4f18f1"
+    },
+    {
+      "file": "CHANGELOG.md",
+      "bytes": 2198,
+      "sha256": "a986d7a26d23d5685b5b9b7693bf2bff14b9bb6dacef54f49b6546d8ba27f2bb"
     },
     {
       "file": "README.md",
-      "bytes": 1874,
-      "sha256": "93d59afa1c1d81de9b89b2f5cd48cc0538963ac08eb83773c1cce1f0f7319a75"
+      "bytes": 2086,
+      "sha256": "512c2e56f54cb68937990aa3547107ad02ebb857b097eb0c5bd1b6f2be9fd5aa"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 12039,
-      "sha256": "0995c7456daddee5eb835d0c169b6516c64db57c59afcb043d93c9246f5d8808"
+      "bytes": 12756,
+      "sha256": "9a48d27c137c3ea8cf133f6e5e939d34cb942666259476cecfecae30d534a731"
+    },
+    {
+      "file": "VERSION",
+      "bytes": 6,
+      "sha256": "1f930dd1f133c1f97a94fe3acb8db34372cf4c01ffdb2b3ff4ca72f9494121e9"
     },
     {
       "file": "docs/benchmark.md",
@@ -169,8 +179,8 @@
     },
     {
       "file": "scripts/Build-VisualStudioExtension.ps1",
-      "bytes": 2738,
-      "sha256": "570f30e602f186849bb1c3aef25d5265b3a60a45463be90df1f8ddde217c7a98"
+      "bytes": 3121,
+      "sha256": "9dfd42b7a21dfc73223c8808c17a6f23a43850b082c2bcfd2abe52235fc357b1"
     },
     {
       "file": "scripts/Build-Worker.ps1",
@@ -335,7 +345,7 @@
     {
       "file": "vsix/AssemblyInfo.cs",
       "bytes": 179,
-      "sha256": "9f1716e2c2cfc93a7e3f4996e98edeed409d467c4df32b704172639124040274"
+      "sha256": "99ca379787aa704b013e1ba7c949e92fc7fa3b2780b1ed2db0288b0aa77b7885"
     },
     {
       "file": "vsix/Commands.vsct",
@@ -380,7 +390,7 @@
     {
       "file": "vsix/source.extension.vsixmanifest",
       "bytes": 1179,
-      "sha256": "40a6ca2d6e711547844de688e912c2f24918da7832cc15a5ab02c0f07899cd1d"
+      "sha256": "3051700dab501be6a4341bc5d56af77f7b31e0c4e7643ecfc3b72c9e2e4ea76a"
     },
     {
       "file": "worker/BuildCancellation.cs",
@@ -414,8 +424,8 @@
     },
     {
       "file": "worker/Dbe.Worker.csproj",
-      "bytes": 346,
-      "sha256": "f0714d983e75acf377fb3bb55c51650c856053af5021722e086187539e9124c7"
+      "bytes": 450,
+      "sha256": "5732a23751787c4b6c389022a9bb349e608227659834c6b11b81bdd42c1e26a7"
     },
     {
       "file": "worker/Directory.Build.props",
@@ -499,8 +509,8 @@
     },
     {
       "file": "worker/Program.cs",
-      "bytes": 7634,
-      "sha256": "b67a5dde772eda51b564e861e665ee5fadd243eabfddc615e7d5e4268fc771d2"
+      "bytes": 7796,
+      "sha256": "811c673c80ebdba4d9679423a00059e6317657f6a8357904aeb56202308b1839"
     },
     {
       "file": "worker/Protocol.cs",

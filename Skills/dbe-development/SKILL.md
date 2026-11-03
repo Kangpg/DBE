@@ -11,6 +11,10 @@ Use the active repository containing `native/`, `worker/` and `scripts/`. Read R
 
 Only DBE-owned code, synthetic fixtures and generalized documentation belong in Git or issues. Never include external project names, source filenames, paths, internal structure, project-specific scripts, source, raw logs or machine identifiers. Private repository visibility does not authorize internal content. An authorized benchmark target is described only as “현재 프로젝트”, with approved timing/outcome data. Inspect filenames, content, commit descriptions and issue text before publishing; scans are supplementary. Preserve local private evidence outside the upload tree.
 
+## Versioned delivery
+
+The user requests a version bump, notes and commit for every completed DBE change set. Use VERSION as the product-version owner, synchronize Worker/VSIX metadata and README, and record behavior, verified scope and unfinished checks in CHANGELOG.md. For pre-1.0 releases use patch increments for fixes/docs and minor increments for features. Keep protocol numbers separate. Validate the resulting metadata/artifacts, refresh SOURCE-MANIFEST.json, review publication scope, then commit/push on the development branch and add/push a matching annotated tag without rewriting existing tags. This workflow does not authorize changing an active deployment or claiming unfinished verification passed.
+
 ## Execution contracts
 
 - Preserve native CL Task/tracker and raw wrapper arguments, encodings, cwd, exit status and caller inheritable diagnostic handles. Wrapper-owned handles are non-inheritable.

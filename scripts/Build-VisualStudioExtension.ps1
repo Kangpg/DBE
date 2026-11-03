@@ -3,6 +3,9 @@ param()
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'Toolchain.ps1')
 $root=Split-Path $PSScriptRoot -Parent
+$version=[IO.File]::ReadAllText((Join-Path $root 'VERSION')).Trim()
+$sourceManifest=[xml](Get-Content -Raw (Join-Path $root 'vsix/source.extension.vsixmanifest'))
+if($sourceManifest.PackageManifest.Metadata.Identity.Version -ne $version){throw 'VSIX manifest differs from VERSION'}
 $tools=Get-DbeToolchain '2022' (Join-Path $root 'native/dbe-cl.vcxproj')
 $output=Join-Path $root 'out/vsix-build'
 New-Item -ItemType Directory -Path $output -Force|Out-Null
@@ -24,6 +27,7 @@ try {
     if(!$archive.GetEntry('Dbe.VisualStudio.dll') -or !$archive.GetEntry('dbe-build-host.exe')){throw 'VSIX is missing required runtime files'}
 } finally {$archive.Dispose()}
 $assembly=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $output 'Dbe.VisualStudio.dll')))
+if($assembly.GetName().Version.ToString(3) -ne $version){throw 'VSIX assembly differs from VERSION'}
 $resource=$assembly.GetManifestResourceStream('VSPackage.resources')
 if(!$resource){throw 'VSIX assembly is missing VSPackage.resources'}
 $resourceReader=[Resources.ResourceReader]::new($resource)

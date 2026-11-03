@@ -17,6 +17,8 @@ static class Program
             if (string.Equals(System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dbe-remote-cl", StringComparison.OrdinalIgnoreCase))
                 return await MsBuildAdapter.Run(args, stop.Token);
             if (args.Length == 0) throw new Rejected("Commands: serve config | info config | probe config output-directory | compile config manifest input-directory output-directory | pair new-directory compiler-path | self-test compiler-path child-probe-path output-directory");
+            if (args.Length == 1 && args[0] == "--version")
+            { Console.WriteLine(typeof(Program).Assembly.GetName().Version!.ToString(3)); return 0; }
             if (args[0] == "runtime-info" && args.Length == 1)
             {
                 Console.WriteLine(JsonSerializer.Serialize(new {

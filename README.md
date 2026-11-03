@@ -2,6 +2,8 @@
 
 Windows MSVC C++ 빌드를 요청 PC와 여러 Worker에 배정하는 실험 프로젝트. 네이티브 wrapper, MSBuild Adapter, TLS Worker와 Visual Studio 확장 소스를 포함한다.
 
+현재 개발 버전은 **0.2.0**이다. [릴리스 노트](CHANGELOG.md)에 변경·검증·남은 항목을 기록한다. 제품 버전은 `VERSION`이 기준이며 통신 프로토콜 번호와 구분한다.
+
 **현재 프로젝트 전체 빌드가 세 모드에서 각각 두 번 성공했다.** 평균은 순정 로컬 297.57초, DBE Local 300.20초, 두 Worker Hybrid 673.36초였다. [벤치마크 조건과 결과](docs/benchmark.md)
 
 - [설치](docs/installation.md): 소스 빌드, Worker 패키지, VSIX.
