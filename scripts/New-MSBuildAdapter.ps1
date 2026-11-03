@@ -9,6 +9,7 @@ param(
     [string[]]$AdditionalClients=@(),
     [switch]$AllowCompilerMismatch,
     [switch]$NativeInputs,
+    [ValidateRange(1,4)][int]$NativeBatchFiles=1,
     [string[]]$NativeInputRoots=@(),
     [string[]]$NativeToolchainRoots=@(),
     [ValidateSet('2022','2026')][string]$VisualStudio='2022'
@@ -20,6 +21,7 @@ $root=Split-Path $PSScriptRoot -Parent
 $tools=Get-DbeToolchain $VisualStudio (Join-Path $root 'native\dbe-cl.vcxproj') 'v143'
 if(Test-Path -LiteralPath $Destination) { throw 'Adapter destination must be new.' }
 if($Mode -eq 'Hybrid' -and !$HostPolicy){throw 'Hybrid mode requires the shared HostPolicy file.'}
+if($NativeBatchFiles -gt 1 -and !$NativeInputs){throw 'Native batches require NativeInputs.'}
 if($NativeInputs -and $Mode -ne 'Hybrid'){throw 'Native input distribution requires Hybrid mode.'}
 if($NativeInputs -and !$NativeInputRoots.Count){throw 'Native inputs require explicit project and SDK input roots.'}
 if(!$PublishDirectory) { $PublishDirectory=(& (Join-Path $PSScriptRoot 'Build-Worker.ps1') -SelfContained).Directory }
@@ -36,6 +38,7 @@ if($Mode -eq 'Hybrid'){
 }
 $state=if([IO.Path]::IsPathRooted($StateDirectory)){[IO.Path]::GetFullPath($StateDirectory)}else{[IO.Path]::GetFullPath((Join-Path $Destination $StateDirectory))}
 $config=[ordered]@{realCompiler=$tools.Compiler;clientConfig=(Resolve-Path -LiteralPath $ClientConfig).Path;stateDirectory=$state;mode=$Mode;allowCompilerMismatch=$AllowCompilerMismatch.IsPresent}
+if($NativeBatchFiles -gt 1){$config.nativeBatchFiles=$NativeBatchFiles}
 if($NativeInputs){$config.nativeInputs=$true;$config.nativeInputRoots=@($NativeInputRoots|ForEach-Object {[IO.Path]::GetFullPath($_)})}
 if($NativeInputs -and $NativeToolchainRoots.Count){$config.nativeToolchainRoots=@($NativeToolchainRoots|ForEach-Object {[IO.Path]::GetFullPath($_)})}
 if($HostPolicy){$config.hostPolicy=(Resolve-Path -LiteralPath $HostPolicy).Path}

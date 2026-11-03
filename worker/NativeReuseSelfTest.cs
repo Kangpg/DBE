@@ -6,7 +6,7 @@ namespace Dbe;
 
 static class NativeReuseSelfTest
 {
-    internal static async Task Run(string compilerPath, string directory, string typeVerifier, string diaLibrary, string? clientConfig = null)
+    internal static async Task Run(string compilerPath, string directory, string typeVerifier, string diaLibrary, string? clientConfig = null, bool requireBatch = false)
     {
         directory = Path.GetFullPath(directory);
         if (Directory.Exists(directory)) throw new Rejected("Reuse test directory must be new");
@@ -46,7 +46,10 @@ static class NativeReuseSelfTest
         File.WriteAllText(Path.Combine(source, "beta.cpp"), "#include \"pch.h\"\nstruct DbeReuseBeta{double payload;char label[32];};extern \"C\" int beta(DbeReuseBeta*p){return int(p->payload)+p->label[0]+VALUE;}\n");
         File.WriteAllText(Path.Combine(source, "bad.cpp"), "#include \"pch.h\"\n#error DBE_REUSE_CONSUMER_ERROR\n");
         File.WriteAllText(Path.Combine(source, "slow.cpp"), "#include \"pch.h\"\n" + string.Join('\n', Enumerable.Range(0, 60000).Select(i => "int slow_" + i + "(){return " + i + ";}")));
-        var names = new List<string> { "pch.h", "value.h", "pch.cpp", "alpha.cpp", "beta.cpp", "bad.cpp", "slow.cpp" };
+        File.WriteAllText(Path.Combine(source, "tail-a.cpp"), "#include \"pch.h\"\nextern \"C\" int tail_a(){return 7;}\n");
+        File.WriteAllText(Path.Combine(source, "tail-b.cpp"), "#include \"pch.h\"\nextern \"C\" int tail_b(){return 9;}\n");
+        File.WriteAllText(Path.Combine(source, "@input.cpp"), "// Must never become a response-file argument\n");
+        var names = new List<string> { "pch.h", "value.h", "pch.cpp", "alpha.cpp", "beta.cpp", "bad.cpp", "slow.cpp", "tail-a.cpp", "tail-b.cpp", "@input.cpp" };
         foreach (int i in Enumerable.Range(0, 512))
         {
             string name = "unused-" + i + ".h"; names.Add(name); File.WriteAllText(Path.Combine(source, name), "// immutable fixture header " + i + "\n");
@@ -78,6 +81,7 @@ static class NativeReuseSelfTest
             throw new TimeoutException("Reuse fixture admission remained busy");
         }
         (Reply Reply, string Output, double Ms)[] first = [];
+        (Reply Reply, string Output, double Ms)[] batchArtifacts = [];
         var timings = new List<object>();
         string original = Directory.CreateDirectory(Path.Combine(directory, "original-producer")).FullName;
         try
@@ -112,6 +116,53 @@ static class NativeReuseSelfTest
             {
                 var connection = await client.Connect(token); using var tcp = connection.Tcp; using var tls = connection.Tls;
                 await Wire.Write(tls, request, token); return (await Wire.Read<Reply>(tls, token)).Status;
+            }
+            if (worker is not null || requireBatch)
+            {
+                Check((await client.Info(token, 7)).MaxProtocol == 7, "native-batch-protocol-negotiated-with-v6-compatibility");
+                Request batch = Manifest("alpha.cpp") with { Version = 7, BatchSources = [
+                    new NativeSource("Q/cache/alpha.cpp", "alpha.cpp"), new NativeSource("Q/cache/beta.cpp", "beta.cpp"), new NativeSource("Q/cache/tail-a.cpp", "tail-a.cpp"), new NativeSource("Q/cache/tail-b.cpp", "tail-b.cpp") ] };
+                var grouped = await Submit(batch, "batch", symbols);
+                Check(grouped.Reply.Status == "completed" && grouped.Reply.Output is null && grouped.Reply.Outputs is { Length: 4 } &&
+                    grouped.Reply.Pdb is not null && grouped.Reply.Cache!.PchHit, "batch-four-objects-share-one-consumer-PDB-and-cached-PCH");
+                batchArtifacts = Enumerable.Range(0, 4).Select(i => (grouped.Reply with { Output = grouped.Reply.Outputs![i], Outputs = null }, grouped.Output, grouped.Ms)).ToArray();
+                string published = Path.Combine(directory, "published", grouped.Reply.Pdb!.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(published)!);
+                symbols.Publish(grouped.Reply.Pdb, Path.Combine(grouped.Output, grouped.Reply.Pdb.Path), published);
+                symbols.Publish(grouped.Reply.Pdb, Path.Combine(grouped.Output, grouped.Reply.Pdb.Path), published);
+                try { symbols.Publish(grouped.Reply.Pdb with { Sha256 = new string('0', 64) }, published, published); throw new Exception("Published PDB identity changed"); }
+                catch (Rejected) { Check(true, "batch-PDB-publication-reuses-immutable-identity-and-rejects-conflicts"); }
+                var warmBatch = await Submit(batch, "batch-warm", symbols);
+                using (var receipt = JsonDocument.Parse(File.ReadAllText(Path.Combine(warmBatch.Output, "result.json"))))
+                    Check(warmBatch.Reply.Status == "completed" && receipt.RootElement.GetProperty("contextReferenceUsed").GetBoolean() &&
+                        receipt.RootElement.GetProperty("inputBytesSent").GetInt64() == 0 && receipt.RootElement.GetProperty("producerPdbBytesReceived").GetInt64() == 0,
+                        "batch-warm-request-reuses-context-inputs-and-producer-symbols");
+                var badBatch = batch with { BatchSources = [batch.BatchSources![0], new NativeSource("Q/cache/bad.cpp", "bad.cpp")] };
+                var failedBatch = await Submit(badBatch, "batch-error", symbols);
+                Check(failedBatch.Reply.Status == "compile-error" && failedBatch.Reply.Outputs is null && failedBatch.Reply.Pdb is null &&
+                    !Directory.EnumerateFiles(failedBatch.Output, "*.obj").Any(), "batch-compiler-error-never-publishes-partial-objects-or-PDB");
+                Check(await Raw(batch with { Files = null, BatchSources = [batch.BatchSources[0], new NativeSource("Q/cache/absent.cpp", "absent.cpp")] }) == "rejected",
+                    "batch-reference-rejects-undeclared-source");
+                Check(await Raw(batch with { Files = null, BatchSources = [batch.BatchSources[0], new NativeSource("Q/cache/beta.cpp", "alpha.cpp")] }) == "rejected",
+                    "batch-reference-rejects-source-argument-redirection");
+                Check(await Raw(batch with { Files = null, BatchSources = [batch.BatchSources[0], batch.BatchSources[0]] }) == "rejected",
+                    "batch-reference-rejects-colliding-object-names");
+                Check(await Raw(batch with { Files = null, BatchSources = [batch.BatchSources[0], new NativeSource("Q/cache/@input.cpp", "@input.cpp")] }) == "rejected",
+                    "batch-reference-rejects-response-file-source-argument");
+                using (var cancelledBatch = CancellationTokenSource.CreateLinkedTokenSource(token))
+                {
+                    cancelledBatch.CancelAfter(200);
+                    Request slowBatch = batch with { Attempt = Guid.NewGuid().ToString("N"), BatchSources = [
+                        batch.BatchSources[0], new NativeSource("Q/cache/slow.cpp", "slow.cpp") ] };
+                    try { await client.Compile(slowBatch, inputs, Path.Combine(directory, "batch-cancel"), cancelledBatch.Token, cache: symbols); throw new Exception("Batch ignored cancellation"); }
+                    catch (OperationCanceledException) when (cancelledBatch.IsCancellationRequested) { Check(true, "batch-cancellation-reaches-owned-compiler"); }
+                }
+                var afterCancel = await Submit(batch, "batch-after-cancel", symbols);
+                Check(afterCancel.Reply.Status == "completed" && afterCancel.Reply.Cache!.PchHit, "batch-cancellation-releases-slot-and-preserves-immutable-PCH");
+                var ownedBatch = new NativeContext(batch); var originalSource = batch.BatchSources[1];
+                batch.BatchSources[1] = new NativeSource("Q/cache/bad.cpp", "bad.cpp");
+                Check(ownedBatch.Definition.BatchSources![1] == originalSource, "batch-context-owns-source-array");
+                batch.BatchSources[1] = originalSource;
             }
             var reference = initial with { Files = null, Attempt = Guid.NewGuid().ToString("N") };
             Check(await Raw(reference with { Options = ["/FoC:/outside.obj"] }) == "rejected", "context-reference-rejects-output-overrides");
@@ -208,18 +259,25 @@ static class NativeReuseSelfTest
             catch (IOException) { held = true; }
             Check(held && File.ReadAllText(evidence) == "retain unknown data", "shutdown-failure-retains-state-ownership-and-evidence");
         }
+        foreach (var dataset in new[] { (Name: "individual", Items: first), (Name: "batch", Items: batchArtifacts) }.Where(x => x.Items.Length > 0))
         foreach (string producerKind in new[] { "remote", "original" })
         {
-            string linked = Directory.CreateDirectory(Path.Combine(directory, "linked-" + producerKind)).FullName;
-            for (int i = 0; i < first.Length; i++)
+            var artifacts = dataset.Items;
+            string linked = Directory.CreateDirectory(Path.Combine(directory, "linked-" + dataset.Name + "-" + producerKind)).FullName;
+            for (int i = 0; i < artifacts.Length; i++)
             {
-                File.Copy(Path.Combine(first[i].Output, "result.obj"), Path.Combine(linked, i == 0 ? "alpha.obj" : "beta.obj"));
-                foreach (var symbol in new[] { first[i].Reply.Pdb!, first[i].Reply.ProducerPdb! })
-                    if (!File.Exists(Path.Combine(linked, symbol.Path))) File.Copy(Path.Combine(first[i].Output, symbol.Path), Path.Combine(linked, symbol.Path));
+                File.Copy(Path.Combine(artifacts[i].Output, artifacts[i].Reply.Output!.Path), Path.Combine(linked, new[] { "alpha.obj", "beta.obj", "tail-a.obj", "tail-b.obj" }[i]));
+                foreach (var symbol in new[] { artifacts[i].Reply.Pdb!, artifacts[i].Reply.ProducerPdb! })
+                    if (!File.Exists(Path.Combine(linked, symbol.Path))) File.Copy(Path.Combine(artifacts[i].Output, symbol.Path), Path.Combine(linked, symbol.Path));
             }
-            File.Copy(Path.Combine(producerKind == "remote" ? first[0].Output : original, "producer.obj"), Path.Combine(linked, "producer.obj"));
+            File.Copy(Path.Combine(producerKind == "remote" ? artifacts[0].Output : original, "producer.obj"), Path.Combine(linked, "producer.obj"));
             if (producerKind == "original") File.Copy(Path.Combine(original, "original.pdb"), Path.Combine(linked, "original.pdb"));
             File.WriteAllText(Path.Combine(linked, "verify.cpp"), "extern \"C\" {int _fltused=0;} struct DbeReuseAlpha{int first;int second;};struct DbeReuseBeta{double payload;char label[32];};extern \"C\" int alpha(DbeReuseAlpha*);extern \"C\" int beta(DbeReuseBeta*);extern \"C\" int entry(){DbeReuseAlpha a{10,11};DbeReuseBeta b{20,{1}};return alpha(&a)+beta(&b)==126?0:1;}\n");
+            if (artifacts.Length == 4) {
+                string verify = Path.Combine(linked, "verify.cpp");
+                File.WriteAllText(verify, File.ReadAllText(verify).Replace("int entry(){", "int tail_a();extern \"C\" int tail_b();extern \"C\" int entry(){")
+                    .Replace("==126?", "+tail_a()+tail_b()==142?"));
+            }
             Directory.CreateDirectory(Path.Combine(linked, "tmp"));
             void Execute(string exe, string args)
             {
@@ -228,16 +286,17 @@ static class NativeReuseSelfTest
                     throw new Exception("Reuse artifact verification failed: " + Encoding.UTF8.GetString(result.Stdout) + Encoding.UTF8.GetString(result.Stderr));
             }
             Execute(compilerPath, "/nologo /c /GS- /O2 /X /Foverify.obj verify.cpp");
-            Execute(Path.Combine(Path.GetDirectoryName(compilerPath)!, "link.exe"), "/nologo /nodefaultlib /debug /pdb:verify.pdb /entry:entry /subsystem:console /out:verify.exe verify.obj alpha.obj beta.obj producer.obj");
+            Execute(Path.Combine(Path.GetDirectoryName(compilerPath)!, "link.exe"), "/nologo /nodefaultlib /debug /pdb:verify.pdb /entry:entry /subsystem:console /out:verify.exe verify.obj alpha.obj beta.obj producer.obj" +
+                (artifacts.Length == 4 ? " tail-a.obj tail-b.obj" : ""));
             Execute(Path.Combine(linked, "verify.exe"), "");
-            Check(true, producerKind + "-producer-and-two-consumers-link-run" + (worker is not null ? "-after-worker-stops" : "-on-requester"));
+            Check(true, dataset.Name + "-" + producerKind + "-producer-and-" + artifacts.Length + "-consumers-link-run" + (worker is not null ? "-after-worker-stops" : "-on-requester"));
             var types = Native.Run(typeVerifier, linked, string.Join(' ', new[] { diaLibrary, Path.Combine(linked, "verify.pdb"), "DbeReuseAlpha", "DbeReuseBeta" }.Select(ClInvocation.Quote)), 10, 256, token);
             if (types.Kind != 0 || types.ExitCode != 0) throw new Exception("DIA type verification failed");
             using var data = JsonDocument.Parse(types.Stdout);
             var udts = data.RootElement.GetProperty("types").EnumerateArray().ToArray();
             Check(udts.Any(x => x.GetProperty("name").GetString() == "DbeReuseAlpha" && x.GetProperty("length").GetInt32() == 8) &&
                 udts.Any(x => x.GetProperty("name").GetString() == "DbeReuseBeta" && x.GetProperty("length").GetInt32() == 40 &&
-                    x.GetProperty("members").EnumerateArray().Any(m => m.GetProperty("name").GetString() == "label" && m.GetProperty("offset").GetInt32() == 8)), producerKind + "-producer-PDB-types-and-members-correct");
+                    x.GetProperty("members").EnumerateArray().Any(m => m.GetProperty("name").GetString() == "label" && m.GetProperty("offset").GetInt32() == 8)), dataset.Name + "-" + producerKind + "-producer-PDB-types-and-members-correct");
             File.WriteAllBytes(Path.Combine(linked, "types.json"), types.Stdout);
         }
         File.WriteAllText(Path.Combine(directory, "checks.json"), JsonSerializer.Serialize(new { checks, timings,

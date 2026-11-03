@@ -13,6 +13,16 @@ int wmain(int argc, wchar_t** argv) {
     if (argc > 1 && wcscmp(argv[1], L"--leaf") == 0) { Sleep(60000); return 0; }
     if (argc > 1 && wcscmp(argv[1], L"--exit") == 0) ExitProcess(0xC000013A);
     if (argc > 1 && wcscmp(argv[1], L"--priority") == 0) { std::printf("%lu", GetPriorityClass(GetCurrentProcess())); return 0; }
+    if (argc > 1 && wcscmp(argv[1], L"--many") == 0) {
+        wchar_t own[32768]; if (!GetModuleFileNameW(nullptr, own, 32768)) return 10;
+        for (int i = 0; i < 12; ++i) {
+            std::wstring command = L"\"" + std::wstring(own) + L"\" --leaf";
+            STARTUPINFOW startup{}; startup.cb = sizeof(startup); PROCESS_INFORMATION child{};
+            if (!CreateProcessW(own, command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &child)) return 8;
+            CloseHandle(child.hThread); CloseHandle(child.hProcess);
+        }
+        return 0; // The supervisor still has to join all twelve owned leaves.
+    }
     if (argc > 1 && wcscmp(argv[1], L"--commit") == 0) {
         void* block = VirtualAlloc(nullptr, static_cast<SIZE_T>(384) * 1024 * 1024, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
         if (!block) return ERROR_NOT_ENOUGH_MEMORY;

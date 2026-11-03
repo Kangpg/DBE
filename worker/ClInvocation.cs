@@ -6,6 +6,18 @@ sealed class UnsupportedCompile(string reason) : Exception(reason);
 sealed record ClInvocation(string Source, string Object, string[] PreprocessOptions, string[] RemoteOptions, string[] LocalOptions, int CodePage, string? PchHeader, string? CompilerPdb,
     string? PchFile = null, string? SourceArgument = null, bool PchProducer = false)
 {
+    internal int NativeParallelism()
+    {
+        int count = 1;
+        foreach (string original in LocalOptions)
+        {
+            string option = original.StartsWith('-') ? "/" + original[1..] : original;
+            if (option == "/MP") count = Environment.ProcessorCount;
+            else if (option.StartsWith("/MP", StringComparison.Ordinal) && int.TryParse(option[3..], out int explicitCount) && explicitCount > 0)
+                count = Math.Min(explicitCount, Environment.ProcessorCount);
+        }
+        return count;
+    }
     internal static ClInvocation[] ParseBatch(string[] args, bool allowProducer = false)
     {
         var all = Expand(args);

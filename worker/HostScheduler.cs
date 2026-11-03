@@ -5,11 +5,12 @@ using System.Text.Json;
 
 namespace Dbe;
 
-// Local memory fields reserve admission capacity; WorkerConfig owns incoming
-// hard Job memory limits. Reservations do not constrain the initiator's heap.
+// Legacy local memory fields reserve admission capacity. Opt-in native admission
+// bounds owned Jobs independently of /MP fan-out; preparation reserves spare
+// commit. WorkerConfig alone owns incoming hard Job memory limits.
 sealed record HostPolicy(int LocalSlots = 4, int RemoteSlots = 2, int LocalMemoryMiB = 4096,
     int ReserveMemoryMiB = 8192, int WaitSeconds = 1200, int CpuBusyPercent = 85, int LinkMemoryMiB = 0, int LocalBatchSlots = 1,
-    int PreprocessMemoryMiB = 0, int LocalBatchMemoryMiB = 0);
+    int PreprocessMemoryMiB = 0, int LocalBatchMemoryMiB = 0, bool PreserveLocalParallelism = false, int NativeLocalJobs = 4);
 
 // A shared policy directory is the ownership scope, across adapter processes.
 // Occupied files survive owner death. A released OS lock is NOT cleanup proof.
@@ -35,13 +36,15 @@ sealed class HostScheduler : IDisposable
         {
             if (policyPin.Length > Wire.HeaderLimit) throw new Rejected("Host policy too large");
             Policy = JsonSerializer.Deserialize<HostPolicy>(policyPin, Wire.Json) ?? throw new Rejected("Missing host policy");
-            if (Policy.LocalSlots < 1 || Policy.LocalSlots >= Environment.ProcessorCount || Policy.RemoteSlots is < 1 or > 2 ||
+            if (Policy.LocalSlots < 1 || Policy.LocalSlots > Environment.ProcessorCount - (Policy.PreserveLocalParallelism ? 0 : 1) || Policy.RemoteSlots is < 1 or > 2 ||
                 Policy.LocalMemoryMiB is < 256 or > 8192 || Policy.ReserveMemoryMiB < 1024 || Policy.WaitSeconds is < 1 or > 3600 || Policy.CpuBusyPercent is < 1 or > 100 ||
                 Policy.LinkMemoryMiB < 0 || Policy.LinkMemoryMiB > Policy.LocalSlots * Policy.LocalMemoryMiB)
                 throw new Rejected("Invalid host policy; leave CPU and memory for the owner");
-            // Native supervisor permits eight processes; leave space for the CL
-            // driver and compiler service around at most four /MP workers.
-            if (Policy.LocalBatchSlots < 1 || Policy.LocalBatchSlots > Math.Min(4, Policy.LocalSlots)) throw new Rejected("Invalid local compile batch size");
+            // Legacy policy remains conservative. Native initiator execution
+            // has a separate owner and can admit the caller's full fan-out.
+            if (Policy.PreserveLocalParallelism && (Policy.NativeLocalJobs < 1 || Policy.NativeLocalJobs > Environment.ProcessorCount))
+                throw new Rejected("Invalid native initiator Job budget");
+            if (Policy.LocalBatchSlots < 1 || Policy.LocalBatchSlots > (Policy.PreserveLocalParallelism ? Policy.LocalSlots : Math.Min(4, Policy.LocalSlots))) throw new Rejected("Invalid local compile batch size");
             if (Policy.PreprocessMemoryMiB != 0 && Policy.PreprocessMemoryMiB < 256 || Policy.PreprocessMemoryMiB > Policy.LocalMemoryMiB ||
                 Policy.LocalBatchMemoryMiB < 0 || Policy.LocalBatchMemoryMiB > Policy.LocalSlots * Policy.LocalMemoryMiB)
                 throw new Rejected("Invalid stage memory budget");
@@ -100,16 +103,27 @@ sealed class HostScheduler : IDisposable
             if (yieldPdb) reason = "queued local PDB consumer";
             if (allowLocal && !yieldPdb)
             {
-                // A fast sequence of local MP groups must not repeatedly take
-                // the last slot away from already queued remote preprocessing.
-                int eligible = flexibleLocal && Policy.LocalBatchSlots > 1 ? Math.Max(1, Policy.LocalSlots - 1) : Policy.LocalSlots;
-                for (int cost = Math.Min(slotCost, eligible); cost >= (flexibleLocal ? 1 : slotCost); cost--) {
-                    int memory = memoryMiB > 0 ? memoryMiB : flexibleLocal && cost > 1 && Policy.LocalBatchMemoryMiB > 0
-                        ? Policy.LocalBatchMemoryMiB : cost * Policy.LocalMemoryMiB;
-                    if ((lease = TryTake("local", eligible, true, source, pdb, cost, memory, out reason)) is not null) break;
-                    // A smaller group can fit fewer slots or a lower memory
-                    // budget. It cannot acquire an occupied PDB or CPU headroom.
-                    if (reason != "slot capacity" && !reason.StartsWith("memory available=", StringComparison.Ordinal)) break;
+                if (Policy.PreserveLocalParallelism)
+                {
+                    // Native /MP is internal to one Job, not an atomic request
+                    // for every machine core. PCH work in another project must
+                    // not leave the remaining cores idle waiting for that Job.
+                    bool preparation = stage == "prep";
+                    int memory = memoryMiB > 0 ? memoryMiB : slotCost > 1 && Policy.LocalBatchMemoryMiB > 0
+                        ? Policy.LocalBatchMemoryMiB : Policy.LocalMemoryMiB;
+                    lease = TryTake(preparation ? "prepare" : "native", preparation ? 2 : Policy.NativeLocalJobs,
+                        true, source, pdb, 1, memory, out reason, nativeAdmission: true, parallelism: slotCost);
+                }
+                else
+                {
+                    // Leave a legacy local slot for queued preprocessing.
+                    int eligible = flexibleLocal && Policy.LocalBatchSlots > 1 ? Math.Max(1, Policy.LocalSlots - 1) : Policy.LocalSlots;
+                    for (int cost = Math.Min(slotCost, eligible); cost >= (flexibleLocal ? 1 : slotCost); cost--) {
+                        int memory = memoryMiB > 0 ? memoryMiB : flexibleLocal && cost > 1 && Policy.LocalBatchMemoryMiB > 0
+                            ? Policy.LocalBatchMemoryMiB : cost * Policy.LocalMemoryMiB;
+                        if ((lease = TryTake("local", eligible, true, source, pdb, cost, memory, out reason)) is not null) break;
+                        if (reason != "slot capacity" && !reason.StartsWith("memory available=", StringComparison.Ordinal)) break;
+                    }
                 }
             }
             if (lease is not null) return lease;
@@ -143,11 +157,13 @@ sealed class HostScheduler : IDisposable
         remote.Dispose();
         return Acquire(true, source, token, pdb);
     }
-    internal int ReservedMemoryMiB()
+    internal int ReservedMemoryMiB(bool includeNative = true)
     {
         int reserved = 0;
-        for (int i = 0; i < Policy.LocalSlots; i++) {
-            string path = Path.Combine(root, $"local-{i}.lease");
+        foreach (string name in Enumerable.Range(0, Policy.LocalSlots).Select(i => $"local-{i}.lease")
+            .Concat(Policy.PreserveLocalParallelism ? Enumerable.Range(0, 2).Select(i => $"prepare-{i}.lease") : [])
+            .Concat(Policy.PreserveLocalParallelism && includeNative ? Enumerable.Range(0, Policy.NativeLocalJobs).Select(i => $"native-{i}.lease") : [])) {
+            string path = Path.Combine(root, name);
             Wire.NoReparse(path);
             try {
                 using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -168,7 +184,7 @@ sealed class HostScheduler : IDisposable
         }
         return reserved;
     }
-    private Lease? TryTake(string pool, int count, bool local, string source, string? pdb, int slotCost, int memoryMiB, out string reason, RemoteTarget? worker = null)
+    private Lease? TryTake(string pool, int count, bool local, string source, string? pdb, int slotCost, int memoryMiB, out string reason, RemoteTarget? worker = null, bool nativeAdmission = false, int parallelism = 0)
     {
         reason = "slot capacity";
         // Remote pools reserve exactly one exclusive file. They do not read
@@ -187,20 +203,23 @@ sealed class HostScheduler : IDisposable
                 if (resource is null) { reason = "compiler PDB in use"; return null; }
                 if (resource.Length != 0) throw new Rejected("Unconfirmed PDB owner cleanup: " + path);
             }
-            if (local)
+            if (local && (!nativeAdmission || pool == "prepare"))
             {
-                if (Stopwatch.GetElapsedTime(lastSample).TotalMilliseconds >= 100)
+                if (!nativeAdmission && Stopwatch.GetElapsedTime(lastSample).TotalMilliseconds >= 100)
                 {
                     ReadCpu(out ulong idle, out ulong total);
                     cpuBusy = total > lastTotal ? 100d * (1d - Math.Min(idle - lastIdle, total - lastTotal) / (double)(total - lastTotal)) : null;
                     lastIdle = idle; lastTotal = total; lastSample = Stopwatch.GetTimestamp();
                 }
-                if (cpuBusy is null || cpuBusy >= Policy.CpuBusyPercent) { reason = "CPU owner headroom"; return null; }
+                if (!nativeAdmission && (cpuBusy is null || cpuBusy >= Policy.CpuBusyPercent)) { reason = "CPU owner headroom"; return null; }
                 var memory = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
                 if (!GlobalMemoryStatusEx(ref memory)) throw new Rejected("Cannot determine available host memory");
-                int reserved = ReservedMemoryMiB();
+                int reserved = ReservedMemoryMiB(includeNative: !nativeAdmission);
                 ulong required = (ulong)(Policy.ReserveMemoryMiB + reserved + memoryMiB) * 1024 * 1024;
-                ulong available = Math.Min(memory.AvailablePhysical, memory.AvailablePageFile);
+                // The user's native build already delegates its own allocations to
+                // Windows. Bound preparation separately against spare commit;
+                // incoming Worker Jobs still enforce their fixed hard limits.
+                ulong available = nativeAdmission ? memory.AvailablePageFile : Math.Min(memory.AvailablePhysical, memory.AvailablePageFile);
                 if (available < required) { reason = $"memory available={available / 1048576}MiB required={required / 1048576}MiB (headroom={Policy.ReserveMemoryMiB}, reserved={reserved}, next={memoryMiB})"; return null; }
             }
             int firstIndex = -1;
@@ -222,7 +241,7 @@ sealed class HostScheduler : IDisposable
             byte[] data = JsonSerializer.SerializeToUtf8Bytes(new { source, local, slotCost, memoryPerSlotMiB = (memoryMiB + slotCost - 1) / slotCost, process = Environment.ProcessId, started = DateTimeOffset.UtcNow }, Wire.Json);
             foreach (var file in files) { file.Write(data); file.Flush(true); }
             if (resource is not null) { resource.Write(data); resource.Flush(true); }
-            var result = new Lease(files.ToArray(), local, firstIndex, resource, worker, memoryMiB);
+            var result = new Lease(files.ToArray(), local, firstIndex, resource, worker, memoryMiB, parallelism > 0 ? parallelism : slotCost);
             files.Clear(); resource = null; return result;
         } finally { foreach (var file in files) file.Dispose(); resource?.Dispose(); }
     }
@@ -232,7 +251,7 @@ sealed class HostScheduler : IDisposable
         try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read); }
         catch (IOException e) when ((e.HResult & 0xffff) is 32 or 33) { return null; }
     }
-    internal sealed class Lease(FileStream[] files, bool local, int index, FileStream? resource, RemoteTarget? worker, int memoryMiB) : IDisposable
+    internal sealed class Lease(FileStream[] files, bool local, int index, FileStream? resource, RemoteTarget? worker, int memoryMiB, int parallelism) : IDisposable
     {
         private bool confirmed = true;
         private bool disposed;
@@ -240,6 +259,7 @@ sealed class HostScheduler : IDisposable
         internal string? ClientPath => worker?.ClientPath;
         internal int Index => index;
         internal int SlotCost => files.Length;
+        internal int Parallelism => parallelism;
         internal int ReservationMiB => memoryMiB;
         internal void BeginExecution() => confirmed = false;
         internal void ConfirmCleanup() => confirmed = true;

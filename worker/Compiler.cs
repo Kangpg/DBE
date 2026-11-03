@@ -63,8 +63,18 @@ static class Native
     [DllImport("dbe-process.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern void DbeRun(string exe, string cwd, string args, string? environment, SafeWaitHandle cancel,
         uint timeout, uint memory, [Out] byte[] stdout, [Out] byte[] stderr, uint capacity, out Result result);
+    [DllImport("dbe-process.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern void DbeRunInitiator(string exe, string cwd, string args, string? environment, SafeWaitHandle cancel,
+        uint timeout, uint memory, [Out] byte[] stdout, [Out] byte[] stderr, uint capacity, out Result result);
+
+    internal static Execution RunInitiator(string exe, string cwd, string args, int seconds, CancellationToken token) =>
+        RunOwned(exe, cwd, args, seconds, 0, token, true, null, null, null, null, true);
 
     internal static Execution Run(string exe, string cwd, string args, int seconds, int memoryMiB, CancellationToken token, bool inheritEnvironment = false, string? tempDirectory = null, string? mapping = null, string? logicalCwd = null, string? include = null)
+        => RunOwned(exe, cwd, args, seconds, memoryMiB, token, inheritEnvironment, tempDirectory, mapping, logicalCwd, include, false);
+
+    private static Execution RunOwned(string exe, string cwd, string args, int seconds, int memoryMiB, CancellationToken token,
+        bool inheritEnvironment, string? tempDirectory, string? mapping, string? logicalCwd, string? include, bool initiator)
     {
         if (memoryMiB < 0) throw new Rejected("Invalid process memory limit");
         using var cancel = new EventWaitHandle(false, EventResetMode.ManualReset);
@@ -85,8 +95,11 @@ static class Native
             args = string.Join(' ', new[] { mapping, logicalCwd ?? throw new Rejected("Mapped execution requires logical cwd"), exe, args }.Select(ClInvocation.Quote));
             exe = Path.Combine(AppContext.BaseDirectory, "dbe-paths.exe");
         }
-        DbeRun(exe, cwd, args, inheritEnvironment ? null : block, cancel.SafeWaitHandle, (uint)seconds * 1000, (uint)memoryMiB,
-            stdout, stderr, Wire.DiagnosticLimit, out var result);
+        Result result;
+        if (initiator) DbeRunInitiator(exe, cwd, args, null, cancel.SafeWaitHandle, (uint)seconds * 1000, 0,
+            stdout, stderr, Wire.DiagnosticLimit, out result);
+        else DbeRun(exe, cwd, args, inheritEnvironment ? null : block, cancel.SafeWaitHandle, (uint)seconds * 1000, (uint)memoryMiB,
+            stdout, stderr, Wire.DiagnosticLimit, out result);
         return new Execution(result.Kind, result.ExitCode, result.Error, result.ProcessId,
             stdout[..(int)result.StdoutSize], stderr[..(int)result.StderrSize]);
     }

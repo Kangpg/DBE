@@ -37,7 +37,7 @@ void capture(HANDLE pipeHandle, unsigned char* output, DWORD capacity, DWORD* us
 }
 void execute(const wchar_t* exe, const wchar_t* cwd, const wchar_t* args, const wchar_t* environment,
              HANDLE cancel, DWORD timeoutMs, DWORD memoryMiB, unsigned char* out, unsigned char* err,
-             DWORD capacity, RunResult& result) {
+             DWORD capacity, RunResult& result, bool initiator = false) {
     result.kind = 1;
     auto failure = [&] { result.error = GetLastError(); };
     if (!exe || !cwd || !args || !out || !err || !capacity || !cancel) {
@@ -49,7 +49,8 @@ void execute(const wchar_t* exe, const wchar_t* cwd, const wchar_t* args, const 
     owner.job.reset(CreateJobObjectW(nullptr, nullptr));
     if (!owner.job.valid()) { failure(); return; }
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!initiator) limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
     if (memoryMiB) limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_JOB_MEMORY;
     limits.BasicLimitInformation.ActiveProcessLimit = 8;
     limits.JobMemoryLimit = static_cast<SIZE_T>(memoryMiB) * 1024 * 1024;
@@ -76,7 +77,8 @@ void execute(const wchar_t* exe, const wchar_t* cwd, const wchar_t* args, const 
     startup.lpAttributeList = attributes.get();
     PROCESS_INFORMATION child{};
     if (!CreateProcessW(exe, command.data(), nullptr, nullptr, TRUE,
-        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS,
+        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW |
+            (initiator ? NORMAL_PRIORITY_CLASS : BELOW_NORMAL_PRIORITY_CLASS),
         const_cast<wchar_t*>(environment), cwd, &startup.StartupInfo, &child)) { failure(); return; }
     dbe::Handle process(child.hProcess), thread(child.hThread);
     result.processId = child.dwProcessId;
@@ -116,5 +118,18 @@ extern "C" __declspec(dllexport) void __cdecl DbeRun(
     *result = {};
     try { execute(exe, cwd, args, environment, cancel, timeoutMs, memoryMiB, out, err, capacity, *result); }
     // Unexpected exceptions do not prove completion of every owned descendant.
+    catch (...) { result->kind = 5; result->error = ERROR_NOT_ENOUGH_MEMORY; }
+}
+
+// The initiating user's own compiler has native fan-out and allocation
+// behavior. Incoming execution continues through the bounded DbeRun entry.
+extern "C" __declspec(dllexport) void __cdecl DbeRunInitiator(
+    const wchar_t* exe, const wchar_t* cwd, const wchar_t* args, const wchar_t* environment,
+    HANDLE cancel, DWORD timeoutMs, DWORD memoryMiB, unsigned char* out, unsigned char* err,
+    DWORD capacity, RunResult* result) noexcept {
+    if (!result) return;
+    *result = {};
+    if (memoryMiB != 0) { result->kind = 1; result->error = ERROR_INVALID_PARAMETER; return; }
+    try { execute(exe, cwd, args, environment, cancel, timeoutMs, 0, out, err, capacity, *result, true); }
     catch (...) { result->kind = 5; result->error = ERROR_NOT_ENOUGH_MEMORY; }
 }

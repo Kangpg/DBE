@@ -19,28 +19,28 @@
     },
     {
       "file": "CHANGELOG.md",
-      "bytes": 8533,
-      "sha256": "67e53e1cb0372fafb4af59c32ac6b54d36e6831030578404d287c4b41b6106f6"
+      "bytes": 10909,
+      "sha256": "b10b3ed3dbb94bec78193fce6b8120042d94d97dc69ca89b1431f51b559f685d"
     },
     {
       "file": "README.md",
-      "bytes": 2281,
-      "sha256": "7cc33eb505d4c180a9106c4a475e49bc14c1b6c231af28fff6324384be74a92e"
+      "bytes": 2516,
+      "sha256": "2cf0f81cbd3f3e42928242aad5ecc831fbf2b38044432be68a2ed8017b059596"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 16774,
-      "sha256": "46e3185f6ea4a797c5278f1ad8ef2e6311086fa2054bbebc9f3ffd29b0f54060"
+      "bytes": 18335,
+      "sha256": "77b02e39bd3fcf363e1185e1c95ea2ae9fa27c5e48a70d838595b4aa0ea5d03d"
     },
     {
       "file": "VERSION",
       "bytes": 6,
-      "sha256": "1725bfa6524c5265e7c171cf06568417d39b947fff49c242f03859479c82334b"
+      "sha256": "d915cc95d6ca8f47ae297713ed46d4e5c5d99ddd29fc3c61e263bdf305f2b5b0"
     },
     {
       "file": "docs/benchmark.md",
-      "bytes": 19204,
-      "sha256": "abdf5a38ce29758f3d311ec939ea9415f7408b57d89d90caac295730d99fc3b7"
+      "bytes": 20267,
+      "sha256": "a265d43056c1587639187f246a364c279d5d60a80d418e44373e1ec45025b973"
     },
     {
       "file": "docs/connection.md",
@@ -59,13 +59,18 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 10089,
-      "sha256": "48c4dd30ff8931fec5ca384b42ea1872edda1950a0df5c990309815f6e31131b"
+      "bytes": 10780,
+      "sha256": "b1ad6bfc136f958b77d14de1bbe55ecc79fb3613a119e9d8379d53526fa4818b"
     },
     {
       "file": "docs/native-pch.md",
-      "bytes": 13850,
-      "sha256": "1363543bbcd9ae7d061af88b2bfd153eab2eeb0e46b747b3184c3371bfb80787"
+      "bytes": 15934,
+      "sha256": "cee8b143106b4bae95acac49d7793dcb898ffd4ec7436580dd20d9c90f017b5c"
+    },
+    {
+      "file": "docs/process-virtualization.md",
+      "bytes": 2892,
+      "sha256": "a2250bcd805175d22380531d3b8374c74fed62953f25b2ce8af7b6a16841a2bf"
     },
     {
       "file": "docs/usage.md",
@@ -169,8 +174,8 @@
     },
     {
       "file": "native/worker-process.cpp",
-      "bytes": 6673,
-      "sha256": "a535eda53393b836049dd7ae0aa0c0ad2cf4fc7b852f0b98a007939e848cd1d7"
+      "bytes": 7583,
+      "sha256": "5d31b4b20ede62f96ba15d2440aa9d353136cbdfa3b4544f07c350fff08442cb"
     },
     {
       "file": "scripts/Allow-WorkerFirewall.ps1",
@@ -214,8 +219,8 @@
     },
     {
       "file": "scripts/New-MSBuildAdapter.ps1",
-      "bytes": 5884,
-      "sha256": "b49aace86e919e91b18cf26b1f46af5e67810e6ffd4f6794f1c714e4f24c26fa"
+      "bytes": 6100,
+      "sha256": "fcb037d9645a085150a13920004dad92d3c1c100583a5e4698466fa3af00536d"
     },
     {
       "file": "scripts/Package-VisualStudioExtension.ps1",
@@ -254,8 +259,8 @@
     },
     {
       "file": "scripts/Test-CompilerProfiles.ps1",
-      "bytes": 15586,
-      "sha256": "c0cd59650bedc2d74d040cd8bda9562f4a31f076a7d940dec61cd1e579a5523a"
+      "bytes": 16060,
+      "sha256": "8989cab98a5617eae69c10495a88d6491841ac78f6d307f9b425eca2e9632103"
     },
     {
       "file": "scripts/Test-HybridIncremental.ps1",
@@ -279,8 +284,8 @@
     },
     {
       "file": "scripts/Test-NativeReuse.ps1",
-      "bytes": 2294,
-      "sha256": "4dbe5aa2aa507ee0be787c0c954b84194292c0ada3c6f7b0cb6c76a9642e5e4c"
+      "bytes": 2382,
+      "sha256": "1b808523717d01ab82d8a9b18974ada002e31a3983d0e83212ef7497efff414e"
     },
     {
       "file": "scripts/Test-NormalBuild.ps1",
@@ -354,13 +359,13 @@
     },
     {
       "file": "tests/worker-child.cpp",
-      "bytes": 2252,
-      "sha256": "fbecf357b715e01eb218dd753f3db831a47afddd94ad544a4e98b8c76ee4036e"
+      "bytes": 2895,
+      "sha256": "d1aa71687c24bd285ca6df98ac7b4409198b514fc32bedd54f4f1ca96fed040b"
     },
     {
       "file": "vsix/AssemblyInfo.cs",
       "bytes": 179,
-      "sha256": "72d58571752a83780f0ac1e953f101c39da07cfb3a856f6fe1086dd190f74c18"
+      "sha256": "867f54ba2404da5cfcc2bf3779b1b942adb9306a18e855d35b3edca543dd12aa"
     },
     {
       "file": "vsix/Commands.vsct",
@@ -405,7 +410,7 @@
     {
       "file": "vsix/source.extension.vsixmanifest",
       "bytes": 1179,
-      "sha256": "c09151630495145e20352264b8671065632d68d9d61ed9aba07068cb4d7b5905"
+      "sha256": "9f7d577823386a0fb25de9210b5ce11a55783da28d1462d585374c5075a7e386"
     },
     {
       "file": "worker/BuildCancellation.cs",
@@ -419,13 +424,13 @@
     },
     {
       "file": "worker/ClInvocation.cs",
-      "bytes": 9432,
-      "sha256": "0c524d3b6f93abb1ac1179cc2afa96b721ad4f773e36e170622ae4816df8967d"
+      "bytes": 9975,
+      "sha256": "9b6c0456f328a5472d983d000dd4ecaa4384dfb22e4258c5ac10ec6c8c099528"
     },
     {
       "file": "worker/Client.cs",
-      "bytes": 9896,
-      "sha256": "90a81b2292329c868b712e9c9c74ae254eb3f12dd87bde36efe7800a7a320590"
+      "bytes": 10151,
+      "sha256": "aac06db7774ade87757e9f79f911964ba4838c6a617d593f826bb57a0bc1cce3"
     },
     {
       "file": "worker/CompileOptions.cs",
@@ -434,8 +439,8 @@
     },
     {
       "file": "worker/Compiler.cs",
-      "bytes": 5577,
-      "sha256": "87d6e90a3ee5393b4fa10c8c5f4674289ddf50c949df646cc99a81c79f24b037"
+      "bytes": 6744,
+      "sha256": "aa4c1e91f787d2975a4c6e9099c2e53f917faa38311bba6cc77184cda3376e01"
     },
     {
       "file": "worker/Dbe.Worker.csproj",
@@ -449,8 +454,8 @@
     },
     {
       "file": "worker/HostScheduler.cs",
-      "bytes": 17247,
-      "sha256": "ea0ceb4283891530104615d23ccf5b8df272f242a6f668b0c74d6e6d69dadbee"
+      "bytes": 19226,
+      "sha256": "56c52c0f59d7d5de7d8f09ade1c5cd864e8be7cdb9e12261ac0176b503085a16"
     },
     {
       "file": "worker/Identity.cs",
@@ -459,58 +464,63 @@
     },
     {
       "file": "worker/LocalCompileBatch.cs",
-      "bytes": 8586,
-      "sha256": "5d5cd2a958d916fce3535ec41cc9792878d16c2d3cc78b9e2098f859101a4a05"
+      "bytes": 8926,
+      "sha256": "7c89df96a5483fba316a3ec27cf8f05524cd836c60feb3f29fd5baa4f66fd0da"
     },
     {
       "file": "worker/MappedCompile.cs",
-      "bytes": 6325,
-      "sha256": "747c2d635b47395ef3ccf9c31ca6a0ea101c2c95a68b55d13dee99f30dcfa5cf"
+      "bytes": 6735,
+      "sha256": "b28d355f8a969c4a0f5721f3db47ee5ba3b8ba137ec372b47ec78f24ae56a5d2"
     },
     {
       "file": "worker/MappedCompiler.cs",
-      "bytes": 3530,
-      "sha256": "c21fda810dd34d127b7352558583880e54f86c2f38b33b687fb2212f98d1f44e"
+      "bytes": 4414,
+      "sha256": "d302efb6bbc729a54471766c1faed2096e00d07540ac7d6e6b225cd6b682f38c"
     },
     {
       "file": "worker/MsBuildAdapter.cs",
-      "bytes": 25673,
-      "sha256": "286a29f553e283d7519cb6abd402380b6c9cb32146900f6fb05a6e2f97a0e6ef"
+      "bytes": 27897,
+      "sha256": "98af488256313de18a08ebb5d846bd010fa8cfdca791145393ef5daefa2fa2c5"
+    },
+    {
+      "file": "worker/NativeBatch.cs",
+      "bytes": 3323,
+      "sha256": "7702d38b11656da44c9848246770a85124b127fa3560b29282796284b954e052"
     },
     {
       "file": "worker/NativeBuild.cs",
-      "bytes": 14018,
-      "sha256": "9da65000b9d95ec6d1bea08db856b9d739b366dbb8341259818a0cfaa45bd9ad"
+      "bytes": 14484,
+      "sha256": "41af80b10b1c9a8ed9d0c81ed0bad1c4f61f688e266b3a2b2fa6f94041616e50"
     },
     {
       "file": "worker/NativeClientCache.cs",
-      "bytes": 6552,
-      "sha256": "77b030f1f84ff458d5603f195eb5397eaee650fb90064ff1c7c10dd0d5495a69"
+      "bytes": 6815,
+      "sha256": "cff6fae1738eb7a6b31ddcf85ae3b197dbe1bd7f2dae5e83d24c8acf6bafba15"
     },
     {
       "file": "worker/NativeCompilationCache.cs",
-      "bytes": 11390,
-      "sha256": "d544934abddf27120ece3d115969721c5b4a02d65fbc42f908ca67f4201d0dae"
+      "bytes": 11595,
+      "sha256": "29a710bc1436a2c4fb576bee6ef2d7f526f66809b3a3f1d91de7c764e69c0ac0"
     },
     {
       "file": "worker/NativeContext.cs",
-      "bytes": 3025,
-      "sha256": "500a182deeaf6d47087b28e845c17a44fdafb3b08b8412824eb1f4ef5db3ab51"
+      "bytes": 3621,
+      "sha256": "55f19e1fcb67493557692d4c1f5f686d5008045c8f38917bf41be07ae490d0ba"
     },
     {
       "file": "worker/NativeInputCache.cs",
-      "bytes": 6932,
-      "sha256": "c0341f73f70ef5947e886edbf6bf8a12307c5fcb05d47c045a6ddcde1af42934"
+      "bytes": 6931,
+      "sha256": "c3b790965ce8d02597e2d1d475c1174308fc152d635aa3f0bdb7392bc3d37648"
     },
     {
       "file": "worker/NativeMsBuild.cs",
-      "bytes": 5667,
-      "sha256": "502b9036bf856f0e824946281ecd9dea88c2aa23eec0566c74f31948097dc7c2"
+      "bytes": 7765,
+      "sha256": "e5f3512466a762afc7b181be056fcc222b1cb22373e40fb434f0efeff7b04667"
     },
     {
       "file": "worker/NativeReuseSelfTest.cs",
-      "bytes": 22294,
-      "sha256": "ca8092ff39b4f0e91b3a75f3816b9960fb51836e2915537d5ff981b2778cc7f6"
+      "bytes": 28756,
+      "sha256": "73d1cf2a0da1e9583fb2d39c63bd6a59dc6e8b18db89cc88447d2694d10926e4"
     },
     {
       "file": "worker/PchPair.cs",
@@ -524,13 +534,13 @@
     },
     {
       "file": "worker/Program.cs",
-      "bytes": 7796,
-      "sha256": "811c673c80ebdba4d9679423a00059e6317657f6a8357904aeb56202308b1839"
+      "bytes": 7860,
+      "sha256": "e69ae1cfc9592b8b971c208094d48cea2fc6563a56c1d089cb05d6fbdba95c96"
     },
     {
       "file": "worker/Protocol.cs",
-      "bytes": 11507,
-      "sha256": "76d1431e488c7f28e1633d31da9c0fa66ae3b9fc881d7bb9fd069d83335cd7bd"
+      "bytes": 12151,
+      "sha256": "34ce5b70fd8757951be8439503723b60e89d5dc13b97784ad2607f7f04568cb7"
     },
     {
       "file": "worker/RuntimeInputs.cs",
@@ -539,18 +549,18 @@
     },
     {
       "file": "worker/SchedulerSelfTest.cs",
-      "bytes": 14208,
-      "sha256": "950d8c15be21de1001cf5d6486673270e9365a6fe0aa3d497483c2c0dea4e673"
+      "bytes": 15367,
+      "sha256": "c5d3790f922e09167c81e8526ac77db71a2363d3430860c9af69998d93b5dbac"
     },
     {
       "file": "worker/SelfTest.cs",
-      "bytes": 32240,
-      "sha256": "08bf61495a75c9903030f1d46320ba99ad5ed52a57159484704b8140fe51c885"
+      "bytes": 32836,
+      "sha256": "0e322ad2169bf77cc9d1bd8324986261b3fe9fd01a74ab8b39324524ca7f4702"
     },
     {
       "file": "worker/Worker.cs",
-      "bytes": 17698,
-      "sha256": "f7401b38f23279aacc1503060df8d83d6715306b0aeb96882d395fe3e1895f58"
+      "bytes": 18308,
+      "sha256": "3e604afc28cb6587a32fe9807c0a32141b10769f34ea1153de0354c3bf10f5a5"
     },
     {
       "file": "worker/global.json",

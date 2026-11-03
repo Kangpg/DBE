@@ -73,3 +73,14 @@ Worker v4 런타임을 기존 Worker 폴더에 덮어쓰는 방식으로 업데�
 OS NLS 파일은 내용만 캐시에 복사한다. 이전 버전이 상속한 읽기 전용 속성은 경로·내용을 검증한 캐시 복사본에서만 해제한다. 원본 OS 파일과 캐시의 불변 핀을 보존하며, 읽기 전용 캐시를 미리 만든 실제 재사용 검증에서 축출·정상 종료까지 확인했다.
 
 로컬 실행의 예약 추정치는 스케줄러 입장 판단에만 사용한다. 요청 PC의 컴파일·전처리·링크에는 그 값을 Job 힙 한도로 적용하지 않는다. 취소·소유권·입장 제어와 수신 Worker의 제한은 유지한다. 이 수정만으로 수신 사용자 활동 보호나 현재 프로젝트 전체 성공·가속을 주장하지 않는다.
+
+
+## 0.3.0 선택형 v7 배치
+
+`New-MSBuildAdapter.ps1 -NativeInputs -NativeBatchFiles 4`로 같은 CL Task에서 최대 4개 소스를 묶는다. 기본 1은 기존 v6다. 모든 Worker가 v7을 지원해야 하며 지원하지 않는 Worker의 배치는 원래 로컬 실행으로 전환되므로, 성공한 빌드만으로 원격 검증을 주장하지 않는다. 실제 v7 receipt와 원격 완료를 확인한다.
+
+각 배치는 기존 incoming 슬롯 하나에서 순차 CL 한 번을 실행한다. 원래 `/Zi`, `/Yu`, 입력·include 경로·producer Fo/Fp 의미는 유지하며 객체별 출력과 배치별 PDB를 반환한다. 캐시 producer seed는 읽기 전용이고 배치가 writable clone 하나를 소유한다. 공통 PDB는 객체 게시가 끝날 때까지 pin하며 해시·길이가 바뀐 동일 경로는 거부한다. 배치 사이의 영구 mutable PDB 공유나 delta 동기화는 지원하지 않는다. 긴 배치가 기존 요청 timeout을 넘으면 이득이 없어질 수 있으므로 최적 크기는 실제 재측정 대상이다.
+
+요청 PC의 원래 `/MP` 처리량 보존은 새 host policy의 `preserveLocalParallelism: true`, `nativeLocalJobs`로 선택한다. `localBatchSlots`는 원래 `/MP` 이하의 내부 fan-out 상한이고 `nativeLocalJobs`는 서로 다른 PDB를 소유한 native Job의 동시 수다. 후자는 MSBuild의 프로젝트 병렬 수와 맞춰 제한한다. 자체 native Job에는 보수적 CPU/physical-memory admission이나 incoming hard limit를 적용하지 않는다. 준비 작업은 두 개 이하이며 spare commit과 headroom을 검사한다. 기존 기본 정책을 자동 변경하지 않는다.
+
+로컬 TLS 합성에서 4개 소비자·하나의 PDB를 원래 로컬 producer 및 원격 producer와 각각 링크/실행하고 DIA로 타입·멤버를 확인했다. Worker cache 제거 뒤에도 링크가 성공했다. 실제 MSBuild Debug/Release, JMC, 혼합 인코딩, 무변경 및 MP 취소도 확인했다. 현재 프로젝트·물리 Worker의 새 경로 검증과 속도 비교는 별도다.

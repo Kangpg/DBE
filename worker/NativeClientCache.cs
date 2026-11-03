@@ -8,7 +8,7 @@ sealed class NativeClientCache : IDisposable
     private readonly Dictionary<string, string?> recorded = new(StringComparer.Ordinal);
     private readonly object gate = new();
     private readonly Dictionary<string, FileStream> pins = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, FileStream> published = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (InputFile File, FileStream Pin)> published = new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> contexts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, NativeContext> definitions = new(StringComparer.Ordinal);
     private static readonly List<NativeClientCache> retained = [];
@@ -66,7 +66,7 @@ sealed class NativeClientCache : IDisposable
             }
             File.WriteAllText(destination, System.Text.Json.JsonSerializer.Serialize(new {
                 kind = "native-invocation-evidence-v1", request.Version, request.Attempt, request.Toolchain, request.Source,
-                request.Options, request.NativeInput, request.ContextKey, definitionFile = file, definitionRetained = file is not null,
+                request.Options, request.NativeInput, request.ContextKey, request.BatchSources, definitionFile = file, definitionRetained = file is not null,
                 inputCount = request.Files!.Length
             }, Wire.Json));
         }
@@ -101,7 +101,10 @@ sealed class NativeClientCache : IDisposable
     {
         lock (gate)
         {
-            if (published.ContainsKey(destination)) return;
+            if (published.TryGetValue(destination, out var existing)) {
+                if (existing.File.Length != file.Length || existing.File.Sha256 != file.Sha256) throw new Rejected("Published symbol identity changed");
+                return;
+            }
             Wire.NoReparse(destination);
             if (!File.Exists(destination))
             {
@@ -118,7 +121,7 @@ sealed class NativeClientCache : IDisposable
             try
             {
                 if (pin.Length != file.Length || Wire.HashFile(destination) != file.Sha256) throw new Rejected("Published producer symbols do not match");
-                published.Add(destination, pin);
+                published.Add(destination, (file, pin));
             }
             catch { pin.Dispose(); throw; }
         }
@@ -128,7 +131,7 @@ sealed class NativeClientCache : IDisposable
         try
         {
             foreach (var pin in pins.Values) pin.Dispose();
-            foreach (var pin in published.Values) pin.Dispose();
+            foreach (var value in published.Values) value.Pin.Dispose();
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
         catch { lock (retained) retained.Add(this); throw; }

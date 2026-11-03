@@ -301,6 +301,12 @@ static class SelfTest
     {
         var priority = Native.Run(child, directory, "--priority", 5, 256, token);
         Check(priority.Kind == 0 && priority.ExitCode == 0 && Encoding.ASCII.GetString(priority.Stdout) == "16384", "native-below-normal-priority");
+        var ownPriority = Native.RunInitiator(child, directory, "--priority", 5, token);
+        var incomingFanout = Native.Run(child, directory, "--many", 5, 256, token);
+        var ownFanout = Native.RunInitiator(child, directory, "--many", 5, token);
+        Check(ownPriority.Kind == 0 && ownPriority.ExitCode == 0 && Encoding.ASCII.GetString(ownPriority.Stdout) == "32" &&
+            incomingFanout.Kind == 0 && incomingFanout.ExitCode == 8 && ownFanout.Kind == 0 && ownFanout.ExitCode == 0,
+            "initiator-native-priority-and-fanout-preserve-incoming-limits-and-owned-cleanup");
         var limited = Native.Run(child, directory, "--commit", 5, 256, token);
         var initiating = Native.Run(child, directory, "--commit", 5, 0, token);
         Check(limited.Kind == 0 && limited.ExitCode == 8 && initiating.Kind == 0 && initiating.ExitCode == 0,

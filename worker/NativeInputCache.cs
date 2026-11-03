@@ -84,7 +84,7 @@ sealed class NativeInputCache(string root) : IDisposable
         // Cache mutation is serialized; independent attempt trees are not.
         // Every referenced cache file remains immutable and pinned until Serve
         // has awaited all active attempts, including their materialization.
-        if (request.Version != 6) Materialize(request, workspace, token);
+        if (request.Version < 6) Materialize(request, workspace, token);
     }
 
     internal void Materialize(Request request, string workspace, CancellationToken token)

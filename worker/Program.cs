@@ -39,8 +39,8 @@ static class Program
             if (args[0] == "self-test" && args.Length == 4) { await SelfTest.Run(args[1], args[2], args[3]); return 0; }
             if (args[0] == "reuse-self-test" && args.Length == 5)
             { await NativeReuseSelfTest.Run(args[1], args[2], args[3], args[4]); return 0; }
-            if (args[0] == "reuse-remote-test" && args.Length == 6)
-            { await NativeReuseSelfTest.Run(args[2], args[3], args[4], args[5], args[1]); return 0; }
+            if (args[0] == "reuse-remote-test" && (args.Length == 6 || args.Length == 7 && args[6] == "--batch"))
+            { await NativeReuseSelfTest.Run(args[2], args[3], args[4], args[5], args[1], args.Length == 7); return 0; }
             if (args[0] is "native-pch-test" or "native-input-test" && args.Length == 4)
             {
                 var (config, root) = Identity.ReadConfig<ClientConfig>(args[1]);

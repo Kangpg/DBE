@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$PublishDirectory,[string]$Compiler,[ValidateSet('2022','2026')][string]$VisualStudio='2022',[string]$RemoteClientConfig,[string]$OutputRoot)
+param([Parameter(Mandatory)][string]$PublishDirectory,[string]$Compiler,[ValidateSet('2022','2026')][string]$VisualStudio='2022',[string]$RemoteClientConfig,[string]$OutputRoot,[switch]$RequireBatch)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'Toolchain.ps1')
@@ -21,6 +21,7 @@ $log=$run+'.log'
 $arguments=@('reuse-self-test')
 if($RemoteClientConfig){$arguments=@('reuse-remote-test',(Resolve-Path -LiteralPath $RemoteClientConfig).Path)}
 $arguments+=@($Compiler,$run,(Join-Path $build 'pdb-types.exe'),(Join-Path $dia 'bin/amd64/msdia140.dll'))
+if($RequireBatch -and $RemoteClientConfig){$arguments+='--batch'}
 & (Join-Path $PublishDirectory 'dbe-worker.exe') @arguments *> $log
 if($LASTEXITCODE){Get-Content $log -Tail 25;throw "Native reuse verification failed: $log"}
 [pscustomobject]@{Run=$run;Log=$log;Checks=(Join-Path $run 'checks.json')}

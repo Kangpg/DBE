@@ -23,6 +23,20 @@ static class SchedulerSelfTest
         File.WriteAllText(policy, JsonSerializer.Serialize(new HostPolicy(2, 2, 256, 1024, 2, CpuBusyPercent: 100), Wire.Json));
         var checks = new List<string>();
         void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); checks.Add(name); }
+        string nativePolicy = Path.Combine(directory, "native-policy", "host.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(nativePolicy)!);
+        int cores = Environment.ProcessorCount;
+        File.WriteAllText(nativePolicy, JsonSerializer.Serialize(new HostPolicy(cores, 2, 256, 1024, 3,
+            CpuBusyPercent: 100, LocalBatchSlots: cores, PreprocessMemoryMiB: 256, LocalBatchMemoryMiB: 1024,
+            PreserveLocalParallelism: true, NativeLocalJobs: 2), Wire.Json));
+        using (var native = new HostScheduler(nativePolicy, client))
+        using (var pch = await native.Acquire(true, "parallel PCH", default, "different-pdb"))
+        using (var full = await native.AcquireCompile("native fanout", default, "native-pdb", cores))
+        using (var preparation = await native.AcquirePreprocess("independent preparation", default))
+        {
+            Check(full.IsLocal && full.SlotCost == 1 && full.Parallelism == cores && full.ReservationMiB == 1024 && preparation.IsLocal &&
+                native.ReservedMemoryMiB() == 1536, "native-local-fanout-keeps-bounded-preparation-progress-and-memory-reservations");
+        }
         using (var scheduler = new HostScheduler(policy, client))
         {
             using var first = await scheduler.Acquire(false, "first", default, "shared-pdb");

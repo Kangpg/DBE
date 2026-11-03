@@ -39,7 +39,10 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
     }
     internal async Task<NativeInvocation?> Resolve(Request request, CancellationToken token)
     {
-        if (request.Files is not null) return new NativeInvocation(request, new NativeContext(request));
+        if (request.Files is not null) {
+            var context = new NativeContext(request);
+            return new NativeInvocation(context.Definition, context);
+        }
         NativeContext.ValidateReferenceHeader(request);
         await admission.WaitAsync(token);
         try
@@ -142,7 +145,9 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
             string? pdb = pdbName is null ? null : Path.Combine(workspace, pdbName);
             if (entry.SeedName is { } seedName && pdb is not null) File.Copy(Path.Combine(entry.Root, seedName), pdb);
             watch.Restart();
-            Execution result = await Task.Run(() => entry.Compiler!.Consume(request, workspace, pdb, seconds, memory, token));
+            Execution result = await Task.Run(() => request.Version == 7
+                ? entry.Compiler!.ConsumeBatch(request, workspace, pdb, seconds, memory, token)
+                : entry.Compiler!.Consume(request, workspace, pdb, seconds, memory, token));
             compileMs = watch.Elapsed.TotalMilliseconds;
             if (result.Kind == 5) { entry.Retain = true; Interlocked.Exchange(ref unhealthy, 1); }
             if (result.Kind == 0 && result.ExitCode == 0 && request.NativeInput!.Producer is { } producer)

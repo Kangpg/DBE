@@ -105,7 +105,7 @@ sealed class Worker : IDisposable
                 try
                 {
                     request = await Wire.Read<Request>(tls, lifetime.Token);
-                    if (request.Version == 6 && request.Operation == "compile")
+                    if (request.Version >= 6 && request.Operation == "compile")
                     {
                         reference = request.Files is null;
                         invocation = await nativeCache.Resolve(request, lifetime.Token);
@@ -115,18 +115,18 @@ sealed class Worker : IDisposable
                 }
                 finally { headerReaders.Release(); }
                 attempt = request.Operation == "compile" ? request.Attempt : "";
-                if (request.Version == 6 && request.Operation == "compile" && invocation is null)
+                if (request.Version >= 6 && request.Operation == "compile" && invocation is null)
                 { await Wire.Write(tls, new Reply("context-miss", attempt), lifetime.Token); return; }
                 if (request.Operation == "info")
                 {
                     await Wire.Write(tls, new Reply(Volatile.Read(ref poisoned) == 0 ? "ready" : "unhealthy",
-                        Capabilities: request.Version >= 5 ? Capabilities with { MaxProtocol = request.Version == 6 ? 6 : 5, DeferredInputs = true,
-                            ReusablePch = request.Version == 6 ? true : null } : Capabilities), lifetime.Token);
+                        Capabilities: request.Version >= 5 ? Capabilities with { MaxProtocol = request.Version >= 6 ? request.Version : 5, DeferredInputs = true,
+                            ReusablePch = request.Version >= 6 ? true : null } : Capabilities), lifetime.Token);
                     return;
                 }
                 if (Volatile.Read(ref poisoned) != 0) throw new Rejected("Worker cleanup failed; restart after inspection");
                 if (request.Toolchain != compiler.Identity) throw new Rejected("Toolchain mismatch");
-                if (request.Version == 6) lifetime.CancelAfter(TimeSpan.FromSeconds(Wire.NativeRequestSeconds(config.TimeoutSeconds)));
+                if (request.Version >= 6) lifetime.CancelAfter(TimeSpan.FromSeconds(Wire.NativeRequestSeconds(config.TimeoutSeconds)));
                 acquired = slots.Wait(0);
                 if (!acquired) { await Wire.Write(tls, new Reply("busy", attempt), lifetime.Token); return; }
                 // Server-generated workspace identity: replayed attempts never share a directory or outputs.
@@ -155,7 +155,7 @@ sealed class Worker : IDisposable
                     if (request.NativeInput is { } native)
                     {
                         execution.CancelAfter(TimeSpan.FromSeconds(config.TimeoutSeconds));
-                        if (request.Version == 6)
+                        if (request.Version >= 6)
                         {
                             cached = await nativeCache.Run(invocation!, attemptDirectory, config.TimeoutSeconds, config.MemoryMiB, execution.Token, pdbName);
                             result = cached.Result;
@@ -185,18 +185,25 @@ sealed class Worker : IDisposable
                 int[] required = request.Version >= 5 ? MappedCompile.Required(request, result) : [];
                 if (required.Length != 0) status = "input-required";
                 InputFile? output = null;
+                InputFile[]? outputs = null;
                 InputFile? pdb = null;
                 InputFile? producer = null;
                 InputFile? producerPdb = null;
                 string? objectPath = workspace is null ? null : System.IO.Path.Combine(workspace, "result.obj");
                 if (status == "completed")
                 {
-                    if (objectPath is null || !File.Exists(objectPath)) throw new Rejected("Compiler produced no object");
-                    Wire.NoReparse(objectPath);
-                    long length = new FileInfo(objectPath).Length;
-                    int limit = request.Version is 3 or 5 or 6 ? Wire.PreparedObjectLimit : Wire.OutputLimit;
-                    if (length <= 0 || length > limit) throw new Rejected($"Object size {length} exceeds supported range 1..{limit}");
-                    output = new InputFile("result.obj", length, Wire.HashFile(objectPath));
+                    InputFile Object(string name)
+                    {
+                        string path = System.IO.Path.Combine(workspace!, name);
+                        Wire.NoReparse(path);
+                        if (!File.Exists(path)) throw new Rejected("Compiler produced no object");
+                        long length = new FileInfo(path).Length;
+                        int limit = request.Version is 3 or 5 or 6 or 7 ? Wire.PreparedObjectLimit : Wire.OutputLimit;
+                        if (length <= 0 || length > limit) throw new Rejected($"Object size {length} exceeds supported range 1..{limit}");
+                        return new InputFile(name, length, Wire.HashFile(path));
+                    }
+                    if (request.Version == 7) outputs = Enumerable.Range(0, request.BatchSources!.Length).Select(i => Object(NativeBatch.ObjectName(i))).ToArray();
+                    else output = Object("result.obj");
                     if (request.NativePch is not null || request.NativeInput?.Producer is not null)
                     {
                         string path = System.IO.Path.Combine(attemptDirectory, "producer.obj");
@@ -221,7 +228,7 @@ sealed class Worker : IDisposable
                 await Wire.Write(tls, new Reply(status, attempt, "native-kind=" + result.Kind + "; win32=" + result.Error,
                     ExitCode: result.Kind == 0 ? result.ExitCode : null, StdoutBytes: result.Stdout.Length,
                     StderrBytes: result.Stderr.Length, Output: output, Pdb: pdb, ProducerObject: producer,
-                    RequiredInputs: required.Length == 0 ? null : required, ProducerPdb: producerPdb, Cache: cached?.Metrics), lifetime.Token);
+                    RequiredInputs: required.Length == 0 ? null : required, ProducerPdb: producerPdb, Cache: cached?.Metrics, Outputs: outputs), lifetime.Token);
                 headerSent = true;
                 bool sendSeed = false;
                 if (producerPdb is not null)
@@ -232,6 +239,7 @@ sealed class Worker : IDisposable
                 }
                 await tls.WriteAsync(result.Stdout, lifetime.Token);
                 await tls.WriteAsync(result.Stderr, lifetime.Token);
+                if (outputs is not null) foreach (var item in outputs) await Wire.SendFile(tls, System.IO.Path.Combine(workspace!, item.Path), item, lifetime.Token);
                 if (output is not null) await Wire.SendFile(tls, objectPath!, output, lifetime.Token);
                 if (pdb is not null) await Wire.SendFile(tls, System.IO.Path.Combine(workspace!, pdb.Path), pdb, lifetime.Token);
                 if (producer is not null) await Wire.SendFile(tls, System.IO.Path.Combine(attemptDirectory, producer.Path), producer, lifetime.Token);

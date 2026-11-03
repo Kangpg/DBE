@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$PublishDirectory,[string]$RemoteClientConfig,[string]$HybridPolicy,[string[]]$AdditionalClients=@(),[switch]$LongOutputNames,[switch]$NativeInputs)
+param([Parameter(Mandatory)][string]$PublishDirectory,[string]$RemoteClientConfig,[string]$HybridPolicy,[string[]]$AdditionalClients=@(),[switch]$LongOutputNames,[switch]$NativeInputs,[ValidateRange(1,4)][int]$NativeBatchFiles=1)
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'Toolchain.ps1')
@@ -31,7 +31,7 @@ try {
     $nativeRoots=@($inputScope)
     $toolchainRoots=@(([IO.Path]::GetFullPath((Join-Path (Split-Path $tools.Compiler -Parent) '../../..'))),(Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits'))
     $toolchainRoots+=Join-Path ([IO.Path]::GetFullPath((Join-Path (Split-Path $tools.Compiler -Parent) '../../../../../..'))) 'Auxiliary/VS'
-    $adapter=& (Join-Path $PSScriptRoot 'New-MSBuildAdapter.ps1') -Destination (Join-Path $run 'adapter') -ClientConfig $clientConfig -PublishDirectory $publish -Mode $mode -HostPolicy $HybridPolicy -AdditionalClients $AdditionalClients -StateDirectory $state -NativeInputs:$NativeInputs -NativeInputRoots $nativeRoots -NativeToolchainRoots $toolchainRoots
+    $adapter=& (Join-Path $PSScriptRoot 'New-MSBuildAdapter.ps1') -Destination (Join-Path $run 'adapter') -ClientConfig $clientConfig -PublishDirectory $publish -Mode $mode -HostPolicy $HybridPolicy -AdditionalClients $AdditionalClients -StateDirectory $state -NativeInputs:$NativeInputs -NativeBatchFiles $NativeBatchFiles -NativeInputRoots $nativeRoots -NativeToolchainRoots $toolchainRoots
     Copy-Item -Path (Join-Path $root 'fixture-remote\*') -Destination $projectRoot -Recurse
     $settings=[xml]'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><DBEEnabled>true</DBEEnabled><DBEAdapterDirectory /></PropertyGroup></Project>'
     $settings.Project.PropertyGroup.DBEAdapterDirectory=$adapter.AdapterDirectory;$settings.Save((Join-Path $projectRoot 'DBE.settings.props'))
@@ -90,9 +90,14 @@ try {
         $checks.Add('native-PCH-preserves-parent-relative-sibling-header')
         $receipts=@(Get-ChildItem $state -Recurse -Filter result.json | ForEach-Object {Get-Content $_.FullName -Raw|ConvertFrom-Json} | Where-Object {$_.PSObject.Properties.Name -contains 'version'})
         $completed=@($receipts|Where-Object {$_.result.status -eq 'completed'})
-        if(!$completed.Count -or @($receipts|Where-Object {$_.version -ne 6}).Count -or @($completed|Where-Object {!$_.result.cache -or !$_.result.producerPdb}).Count){throw 'Native reusable-PCH receipts missing'}
+        if(!$completed.Count -or @($receipts|Where-Object {$_.version -notin 6,7}).Count -or @($completed|Where-Object {!$_.result.cache -or !$_.result.producerPdb}).Count){throw 'Native reusable-PCH receipts missing'}
         if($completed.Count -gt 1 -and !@($completed|Where-Object {$_.result.cache.pchHit -and $_.result.cache.inputsHit}).Count){throw 'Repeated MSBuild consumers did not reuse native inputs/PCH'}
         $checks.Add('MSBuild-v6-native-input-and-PCH-reuse-receipts')
+        if($NativeBatchFiles -gt 1){
+            $batches=@($completed|Where-Object {$_.version -eq 7})
+            if(!$batches.Count -or @($batches|Where-Object {$_.result.outputs.Count -lt 2 -or !$_.result.pdb -or $_.result.output}).Count){throw 'Native shared-PDB batch did not execute'}
+            $checks.Add('MSBuild-native-batch-returns-multiple-objects-with-one-PDB')
+        }
     }
     if($HybridPolicy -and !(Select-String -LiteralPath $full -Pattern 'DBE: local(-batch)?-running ' -Quiet)){throw 'Planned local compilation missing'}
     if($HybridPolicy -and $policy.PSObject.Properties.Name -contains 'localBatchSlots' -and $policy.localBatchSlots -gt 1){

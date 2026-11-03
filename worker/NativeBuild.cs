@@ -94,6 +94,14 @@ sealed class NativeBuild : IDisposable
             });
         }
     }
+    internal Request BatchManifest(ClInvocation[] sources, string attempt, string toolchain)
+    {
+        Request first = Manifest(sources[0], attempt, toolchain);
+        var request = first with { Version = 7, BatchSources = sources.Select(x =>
+            new NativeSource(MappedCompile.InputPath(x.Source), x.SourceArgument ?? x.Source)).ToArray() };
+        lock (gate) _ = preparedContext!.Expand(request with { Files = null });
+        return request;
+    }
     internal void Resolve(Request request, int[] required)
     {
         lock (gate)

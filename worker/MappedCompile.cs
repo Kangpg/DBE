@@ -24,10 +24,17 @@ sealed record MappedCompile(string WorkingDirectory, string SourceArgument, stri
         return relative;
     }
     internal static string InputDirectory(string absolute) => InputPath(Path.TrimEndingDirectorySeparator(absolute));
+    internal static string SourcePath(string argument, string directory)
+    {
+        if (string.IsNullOrEmpty(argument) || argument[0] is '/' or '-' or '@' || argument.Length > 32760 ||
+            argument.Contains('\0') || argument.Contains('\r') || argument.Contains('\n'))
+            throw new Rejected("Expected a source argument, not an option or response file");
+        return InputPath(Path.GetFullPath(argument, directory));
+    }
     internal void Validate(Request request, HashSet<string> paths)
     {
         InputDirectory(WorkingDirectory);
-        if (InputPath(Path.GetFullPath(SourceArgument, WorkingDirectory)) != request.Source) throw new Rejected("Native source identity mismatch");
+        if (SourcePath(SourceArgument, WorkingDirectory) != request.Source) throw new Rejected("Native source identity mismatch");
         ValidateOptions(request.Options);
         if (Include.Length > 32760 || Include.Contains('\0')) throw new Rejected("Invalid native include environment");
         foreach (string root in Include.Split(';', StringSplitOptions.RemoveEmptyEntries)) InputDirectory(Path.GetFullPath(root, WorkingDirectory));
@@ -36,13 +43,13 @@ sealed record MappedCompile(string WorkingDirectory, string SourceArgument, stri
             Wire.ValidatePath(producer.Header);
             InputPath(producer.PchFile);
             if (producer.ObjectFile is not null) InputPath(producer.ObjectFile);
-            if (!paths.Contains(InputPath(Path.GetFullPath(producer.Source, WorkingDirectory)))) throw new Rejected("Missing PCH producer");
+            if (!paths.Contains(SourcePath(producer.Source, WorkingDirectory))) throw new Rejected("Missing PCH producer");
             ValidateOptions(producer.Options);
-            if (request.Version == 6 && (producer.ObjectFile is null || !Guid.TryParseExact(producer.Generation, "N", out _)))
+            if (request.Version >= 6 && (producer.ObjectFile is null || !Guid.TryParseExact(producer.Generation, "N", out _)))
                 throw new Rejected("Reusable PCH requires producer object and generation");
-            if (request.Version == 6 && producer.Options.Contains("/Zi") != request.ReturnsPdb)
+            if (request.Version >= 6 && producer.Options.Contains("/Zi") != request.ReturnsPdb)
                 throw new Rejected("Reusable PCH requires matching debug profiles");
-            if (request.Version == 6 && request.Options!.Contains("/GL")) throw new Rejected("Reusable LTCG PCH is not supported");
+            if (request.Version >= 6 && request.Options!.Contains("/GL")) throw new Rejected("Reusable LTCG PCH is not supported");
             if (paths.Contains(InputPath(producer.PchFile)) || producer.ObjectFile is not null && paths.Contains(InputPath(producer.ObjectFile)))
                 throw new Rejected("Native outputs overlap immutable inputs");
         }

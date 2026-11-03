@@ -77,3 +77,10 @@ compiler 버전/identity와 실제 queue/receive/compile/return 상태를 표시
 - 하나의 native MP Job/PDB owner, required-local waiter 우선 처리.
 
 이 이력은 해당 경계의 검증이며 최신 엔진의 전체 지원이나 가속 달성을 뜻하지 않는다.
+
+
+## 0.3.0 후속 상태
+
+DBE-002/003: 요청 PC의 native Job admission과 내부 `/MP` fan-out을 분리하고 선택형 v7의 2~4소스 공유 PDB 배치를 추가했다. 수신 PC budget은 변경하지 않았다. 원본 옵션·PCH, 4객체 링크/실행·DIA, 오류·취소와 실제 MSBuild 합성 검증을 통과했다. 전체 파일 접근 가상화·Agent 수명 PDB 공유는 미구현이다.
+
+DBE-006: 새 런타임의 두 물리 Worker와 현재 프로젝트 전체/무변경 재측정은 남아 있다. 다른 빌드와 겹쳐 중단한 예비 실행을 성공 시간으로 사용하지 않는다. 기존 이슈를 종료하거나 가속 달성으로 표시하지 않는다.

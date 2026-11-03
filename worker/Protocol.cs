@@ -13,7 +13,8 @@ sealed record Request(int Version, string Operation, string Attempt, string? Too
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? Options = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PchPair? NativePch = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MappedCompile? NativeInput = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContextKey = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContextKey = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NativeSource[]? BatchSources = null)
 {
     internal bool ReturnsPdb => Version >= 3 && Options!.Contains("/Zi");
 }
@@ -30,7 +31,8 @@ sealed record Reply(string Status, string Attempt = "", string? Message = null, 
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int[]? MissingInputs = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int[]? RequiredInputs = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InputFile? ProducerPdb = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NativeCacheMetrics? Cache = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NativeCacheMetrics? Cache = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InputFile[]? Outputs = null);
 sealed class Rejected(string message) : Exception(message);
 
 static partial class Wire
@@ -77,6 +79,14 @@ static partial class Wire
 
     internal static void Validate(Request request)
     {
+        if (request.Version == 7)
+        {
+            if (request.Operation == "info") return;
+            Validate(request with { Version = 6, BatchSources = null });
+            NativeBatch.Validate(request, request.Files!.Select(x => x.Path).ToHashSet(StringComparer.OrdinalIgnoreCase));
+            return;
+        }
+        if (request.BatchSources is not null) throw new Rejected("Batch sources require protocol v7");
         if (request.Version is not (1 or 2 or 3 or 4 or 5 or 6)) throw new Rejected("Unsupported protocol version");
         if (request.Operation == "info") return;
         if (request.Operation != "compile") throw new Rejected("Unsupported operation");

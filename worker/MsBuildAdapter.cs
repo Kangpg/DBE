@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Dbe;
 sealed record AdapterConfig(string RealCompiler, string ClientConfig, string StateDirectory, string Mode, bool AllowCompilerMismatch = false, string? HostPolicy = null, string[]? AdditionalClients = null,
-    bool NativeInputs = false, string[]? NativeInputRoots = null, string[]? NativeArtifactRoots = null, string[]? NativeToolchainRoots = null)
+    bool NativeInputs = false, string[]? NativeInputRoots = null, string[]? NativeArtifactRoots = null, string[]? NativeToolchainRoots = null, int NativeBatchFiles = 1)
 {
     internal IEnumerable<string> Clients => new[] { ClientConfig }.Concat(AdditionalClients ?? []);
     internal static (AdapterConfig Config, string Root) Read(string path)
@@ -30,8 +30,8 @@ static partial class MsBuildAdapter
         string executable = Path.Combine(Path.GetDirectoryName(config.RealCompiler)!, tool + ".exe");
         Console.WriteLine("DBE: local " + tool + " " + Environment.CurrentDirectory);
         lease.BeginExecution();
-        Execution result = await Task.Factory.StartNew(() => Native.Run(executable, Environment.CurrentDirectory, ClInvocation.RawTail(),
-            LocalExecutionSeconds, 0, token, true), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Execution result = await Task.Factory.StartNew(() => Native.RunInitiator(executable, Environment.CurrentDirectory, ClInvocation.RawTail(),
+            LocalExecutionSeconds, token), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         if (result.Kind != 5) lease.ConfirmCleanup();
         Emit(result);
         return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail(tool + " supervisor kind=" + result.Kind);
@@ -41,6 +41,8 @@ static partial class MsBuildAdapter
         var (config, root) = AdapterConfig.Read(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
         if (config.Mode is not ("Local" or "Auto" or "Distributed" or "Hybrid")) throw new Rejected("Invalid DBE mode");
         if (config.NativeInputs && config.Mode != "Hybrid") throw new Rejected("Native inputs require Hybrid mode");
+        if (config.NativeBatchFiles is < 1 or > NativeBatch.MaxSources || config.NativeBatchFiles > 1 && !config.NativeInputs)
+            throw new Rejected("Native batching requires bounded native inputs");
         if (config.Mode != "Hybrid" && config.AdditionalClients is { Length: > 0 }) throw new Rejected("Multiple Workers require Hybrid mode");
         using var scheduler = config.Mode == "Hybrid" ? new HostScheduler(config.HostPolicy ?? throw new Rejected("Hybrid requires a shared host policy"), config.Clients) : null;
         string raw = ClInvocation.RawTail();
@@ -61,12 +63,27 @@ static partial class MsBuildAdapter
             batch = ClInvocation.ParseBatch(args);
         }
         catch (UnsupportedCompile e) { return await Fallback(config, raw, e.Message, token, scheduler); }
+        int localParallelism = scheduler is null ? 1 : Math.Min(scheduler.Policy.LocalBatchSlots,
+            scheduler.Policy.PreserveLocalParallelism ? batch[0].NativeParallelism() : scheduler.Policy.LocalBatchSlots);
+        // A task already fits on the initiator. Avoid cold remote preparation
+        // for work whose full native fan-out is available locally.
+        if (scheduler?.Policy.PreserveLocalParallelism == true && batch.Length <= localParallelism)
+        {
+            int count = Math.Min(localParallelism, batch.Length);
+            int reservation = count > 1 && scheduler.Policy.LocalBatchMemoryMiB > 0 ? scheduler.Policy.LocalBatchMemoryMiB : scheduler.Policy.LocalMemoryMiB;
+            using var local = await scheduler.Acquire(true, batch[0].Source, token, batch[0].CompilerPdb, count, reservation);
+            if (batch.Length == 1) {
+                using var owned = CreateAttempt(config, root, batch[0]);
+                return await CompileLocal(config, root, batch[0], owned.Root, owned.ObjectState, local, scheduler, token);
+            }
+            return await CompileLocalBatch(config, root, batch, local, token);
+        }
         int[] results = new int[batch.Length];
         var pending = new System.Collections.Concurrent.ConcurrentQueue<int>(Enumerable.Range(0, batch.Length));
         // ParseBatch preserves one common option set. Only one native Job can
         // own its compiler PDB at a time. Keep one extra contender for required
         // local fallback, without pre-claiming a source per unavailable core.
-        bool sharedPdb = scheduler is not null && scheduler.Policy.LocalBatchSlots > 1 && batch.Length > 0
+        bool sharedPdb = scheduler is not null && localParallelism > 1 && batch.Length > 0
             && batch[0].CompilerPdb is not null && batch.All(x => x.CompilerPdb == batch[0].CompilerPdb);
         int concurrency = scheduler is null ? 2 : (sharedPdb ? Math.Min(2, scheduler.Policy.LocalSlots) : scheduler.Policy.LocalSlots) + scheduler.PipelineCapacity;
         var compiler = new Lazy<Compiler>(() => new Compiler(config.RealCompiler));
@@ -79,24 +96,34 @@ static partial class MsBuildAdapter
             while (pending.TryDequeue(out int index)) {
             var invocation = batch[index];
             using var placement = scheduler is null ? null : await scheduler.AcquireCompile(invocation.Source, ct, invocation.CompilerPdb,
-                Math.Min(scheduler.Policy.LocalBatchSlots, pending.Count + 1));
+                Math.Min(localParallelism, pending.Count + 1));
             await Task.Yield(); // Let other placements start before a synchronous native compiler call.
             var indices = new List<int> { index };
-            if (placement is { IsLocal: true, SlotCost: > 1 })
+            if (placement is { IsLocal: true, Parallelism: > 1 })
             {
-                int groupLimit = placement.SlotCost * 4;
+                int groupLimit = placement.Parallelism * 4;
                 if (sharedPdb)
                 {
                     // Feed the other MP children when one TU has a long tail.
                     // Keep a pipeline of unclaimed work for both Workers.
-                    int available = Math.Max(0, pending.Count - scheduler!.PipelineCapacity);
-                    groupLimit = Math.Clamp(available, groupLimit, placement.SlotCost * 16);
+                    int available = Math.Max(0, pending.Count - scheduler!.PipelineCapacity * config.NativeBatchFiles);
+                    int minimum = config.NativeBatchFiles > 1 ? placement.Parallelism : groupLimit;
+                    groupLimit = Math.Clamp(available, minimum, placement.Parallelism * 16);
                 }
                 while (indices.Count < groupLimit && pending.TryDequeue(out int next)) indices.Add(next);
             }
-            if (indices.Count == 1) results[index] = native is not null && placement is { IsLocal: false }
-                ? await RunNative(config, root, invocation, ct, scheduler!, placement, compiler, native)
-                : await RunOne(config, root, invocation, ct, scheduler, placement, compiler, validation);
+            if (native is not null && placement is { IsLocal: false })
+            {
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path.GetFileNameWithoutExtension(invocation.Source) };
+                while (indices.Count < config.NativeBatchFiles && pending.TryDequeue(out int next))
+                {
+                    if (!names.Add(Path.GetFileNameWithoutExtension(batch[next].Source))) { pending.Enqueue(next); break; }
+                    indices.Add(next);
+                }
+                int result = await RunNative(config, root, indices.Select(i => batch[i]).ToArray(), ct, scheduler!, placement, compiler, native);
+                foreach (int i in indices) results[i] = result;
+            }
+            else if (indices.Count == 1) results[index] = await RunOne(config, root, invocation, ct, scheduler, placement, compiler, validation);
             else {
                 int result = await CompileLocalBatch(config, root, indices.Select(i => batch[i]).ToArray(), placement!, ct);
                 foreach (int i in indices) results[i] = result;
@@ -246,13 +273,16 @@ static partial class MsBuildAdapter
         {
             string symbols = Path.Combine(Path.GetDirectoryName(invocation.Object)!, pdb.Path);
             Wire.NoReparse(symbols);
-            File.Copy(Path.Combine(outputRoot, pdb.Path), symbols, false);
-            if (Wire.HashFile(symbols) != pdb.Sha256) throw new Rejected("PDB changed before publication");
+            if (cache is not null) cache.Publish(pdb, Path.Combine(outputRoot, pdb.Path), symbols);
+            else {
+                File.Copy(Path.Combine(outputRoot, pdb.Path), symbols, false);
+                if (Wire.HashFile(symbols) != pdb.Sha256) throw new Rejected("PDB changed before publication");
+            }
         }
         string pending = invocation.Object + ".dbe-" + attempt;
         try
         {
-            File.Copy(Path.Combine(outputRoot, "result.obj"), pending, false);
+            File.Copy(Path.Combine(outputRoot, result.Output!.Path), pending, false);
             if (Wire.HashFile(pending) != result.Output!.Sha256) throw new Rejected("Object changed before publication");
             File.Move(pending, invocation.Object, true);
         }
@@ -304,10 +334,10 @@ static partial class MsBuildAdapter
         output?.BeginExecution();
         lease?.BeginExecution();
         Execution result;
-        using (BuildTiming.Measure(stage ?? (BuildTiming.Enabled ? "compile.local." + (lease?.SlotCost ?? 1) : "")))
+        using (BuildTiming.Measure(stage ?? (BuildTiming.Enabled ? "compile.local." + (lease?.Parallelism ?? 1) : "")))
             // Admission reservations are estimates, not compiler heap limits.
             // The initiating user's compiler retains its native allocation behavior.
-            result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, 0, token, true);
+            result = Native.RunInitiator(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, token);
         output?.CompleteExecution(result);
         if (result.Kind != 5) lease?.ConfirmCleanup();
         return result;
@@ -331,7 +361,7 @@ static partial class MsBuildAdapter
     {
         token.ThrowIfCancellationRequested();
         Console.WriteLine("DBE: local (" + reason + ")");
-        Execution result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, 0, token, true);
+        Execution result = Native.RunInitiator(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, token);
         Emit(result);
         return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail("Local compiler supervisor kind=" + result.Kind);
     }

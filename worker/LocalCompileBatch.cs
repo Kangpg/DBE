@@ -98,13 +98,21 @@ static partial class MsBuildAdapter
     private static async Task<int> CompileLocalBatch(AdapterConfig config, string root, ClInvocation[] sources,
         HostScheduler.Lease placement, CancellationToken token)
     {
-        // One native job and one exclusive compiler-PDB lease own the whole MP
-        // group. Independent jobs must not kill a shared MSPDBSRV underneath
-        // each other; simply removing the PDB lock would violate that lifetime.
         var attempts = new List<OwnedAttempt>();
         try
         {
             foreach (var source in sources) attempts.Add(CreateAttempt(config, root, source));
+            return await ExecuteLocalBatch(config, root, sources, attempts, placement, token);
+        }
+        finally { foreach (var attempt in attempts) attempt.Dispose(); }
+    }
+    private static async Task<int> ExecuteLocalBatch(AdapterConfig config, string root, ClInvocation[] sources,
+        IReadOnlyList<OwnedAttempt> attempts, HostScheduler.Lease placement, CancellationToken token, string kind = "local")
+    {
+        // The whole native Job owns its shared PDB; the caller retains all
+        // object locks through execution and immutable output publication.
+        try
+        {
             using var output = new LocalOutput(config, root, attempts[0].Root, sources.Select(x => Path.GetFileName(x.Object)));
             string staging = output.Root;
             string response = Path.Combine(attempts[0].Root, "scheduled-batch.rsp");
@@ -112,11 +120,11 @@ static partial class MsBuildAdapter
             // heavier sources first within this Job; keep result indexing and
             // publication order intact. Size is a hint, not an admission fact.
             IEnumerable<string> commandSources = sources.Select(x => x.SourceArgument ?? x.Source);
-            if (sources.Length > placement.SlotCost * 4)
+            if (sources.Length > placement.Parallelism * 4)
                 commandSources = commandSources.OrderByDescending(SourceWeight);
             File.WriteAllText(response, string.Join(' ', LocalCommand(sources[0], staging + Path.DirectorySeparatorChar,
-                placement.SlotCost, commandSources).Select(ClInvocation.Quote)), Encoding.Unicode);
-            for (int i = 0; i < sources.Length; i++) Event(attempts[i].Root, "local-batch-running", sources[i], Environment.MachineName);
+                placement.Parallelism, commandSources).Select(ClInvocation.Quote)), Encoding.Unicode);
+            for (int i = 0; i < sources.Length; i++) Event(attempts[i].Root, kind == "local" ? "local-batch-running" : "fallback-running", sources[i], Environment.MachineName);
             var result = await ExecuteAsync(config, "@" + ClInvocation.Quote(response), token, placement, output);
             Emit(result);
             if (result.Kind != 0 || result.ExitCode != 0)
@@ -125,7 +133,7 @@ static partial class MsBuildAdapter
                 {
                     DeleteObject(sources[i].Object);
                     Record(attempts[i].Root, "local-compile-error", sources[i], null, null);
-                    Event(attempts[i].Root, "local-failed", sources[i], Environment.MachineName);
+                    Event(attempts[i].Root, kind + "-failed", sources[i], Environment.MachineName);
                 }
                 return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail("Local batch supervisor kind=" + result.Kind);
             }
@@ -137,12 +145,11 @@ static partial class MsBuildAdapter
                 token.ThrowIfCancellationRequested();
                 output.Publish(Path.GetFileName(sources[i].Object), sources[i].Object);
                 File.Delete(Path.Combine(attempts[i].ObjectState, "object.json"));
-                Record(attempts[i].Root, "local-completed", sources[i], null, null);
-                Event(attempts[i].Root, "local-completed", sources[i], Environment.MachineName);
+                Record(attempts[i].Root, kind + "-completed", sources[i], null, null);
+                Event(attempts[i].Root, kind + "-completed", sources[i], Environment.MachineName);
             }
             return 0;
         }
         catch { foreach (var source in sources) DeleteObject(source.Object); throw; }
-        finally { foreach (var attempt in attempts) attempt.Dispose(); }
     }
 }

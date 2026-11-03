@@ -27,18 +27,30 @@ sealed class MappedCompiler
         Directory.CreateDirectory(Path.GetDirectoryName(Resolve(recipe.PchFile))!);
         string destination = recipe.ObjectFile ?? MappedCompile.PhysicalPath(Path.Combine(workspace, "producer.obj"));
         if (recipe.ObjectFile is not null) Directory.CreateDirectory(Path.GetDirectoryName(Resolve(recipe.ObjectFile))!);
-        return Compile(recipe.Source, recipe.Options, recipe, true, destination, workspace, pdb, seconds, memory, token);
+        return Compile([recipe.Source], recipe.Options, recipe, true, destination, workspace, pdb, seconds, memory, token);
     }
     internal Execution Consume(Request request, string workspace, string? pdb, int seconds, int memory, CancellationToken token) =>
-        Compile(request.NativeInput!.SourceArgument, request.Options!, context.Producer, false,
+        Compile([request.NativeInput!.SourceArgument], request.Options!, context.Producer, false,
             MappedCompile.PhysicalPath(Path.Combine(workspace, "result.obj")), workspace, pdb, seconds, memory, token);
-    private Execution Compile(string source, string[] options, NativeRecipe? recipe, bool producer, string output,
+    internal Execution ConsumeBatch(Request request, string workspace, string? pdb, int seconds, int memory, CancellationToken token)
+    {
+        var sources = request.BatchSources ?? throw new Rejected("Missing batch sources");
+        string objects = Directory.CreateDirectory(Path.Combine(workspace, "batch-objects")).FullName;
+        Execution result = Compile(sources.Select(x => x.Argument), request.Options!, context.Producer, false,
+            MappedCompile.PhysicalPath(objects) + "\\", workspace, pdb, seconds, memory, token);
+        if (result.Kind == 0 && result.ExitCode == 0)
+            for (int i = 0; i < sources.Length; i++)
+                File.Move(Path.Combine(objects, Path.GetFileNameWithoutExtension(sources[i].Path) + ".obj"),
+                    Path.Combine(workspace, NativeBatch.ObjectName(i)));
+        return result;
+    }
+    private Execution Compile(IEnumerable<string> sources, string[] options, NativeRecipe? recipe, bool producer, string output,
         string workspace, string? pdb, int seconds, int memory, CancellationToken token)
     {
         var arguments = options.Concat(["/nologo", "/c", "/TP", "/Fo" + output]).ToList();
         if (recipe is not null) arguments.AddRange([(producer ? "/Yc" : "/Yu") + recipe.Header, "/Fp" + recipe.PchFile]);
         if (pdb is not null) arguments.Add("/Fd" + MappedCompile.PhysicalPath(pdb));
-        arguments.Add(source);
+        arguments.AddRange(sources);
         string response = Path.Combine(workspace, producer ? "producer.rsp" : "consumer.rsp");
         File.WriteAllText(response, string.Join(' ', arguments.Select(ClInvocation.Quote)), Encoding.Unicode);
         string temporary = MappedCompile.PhysicalPath(Directory.CreateDirectory(Path.Combine(workspace, "tmp")).FullName);
