@@ -65,6 +65,25 @@ static class Identity
             new ClientConfig(host, port, "identity.pfx", Pin(serverCert)), Wire.Json));
     }
 
+    internal static void CreateRequester(string root)
+    {
+        root = System.IO.Path.GetFullPath(root);
+        Wire.NoReparse(root);
+        if (Directory.Exists(root) || File.Exists(root)) throw new Rejected("Requester directory must be new");
+        Directory.CreateDirectory(root);
+        using var certificate = Create("dbe-agent", "1.3.6.1.5.5.7.3.2");
+        void WriteNew(string name, byte[] content)
+        {
+            using var file = new FileStream(System.IO.Path.Combine(root, name), FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            file.Write(content); file.Flush(true);
+        }
+        WriteNew("identity.pfx", certificate.Export(X509ContentType.Pfx, ""));
+        WriteNew("requester.cer", certificate.Export(X509ContentType.Cert));
+        WriteNew("requester.json", JsonSerializer.SerializeToUtf8Bytes(new {
+            version = 1, requesterId = Guid.NewGuid().ToString("N"), requesterPin = Pin(certificate)
+        }, Wire.Json));
+    }
+
     internal static (T Config, string Root) ReadConfig<T>(string path)
     {
         path = System.IO.Path.GetFullPath(path);

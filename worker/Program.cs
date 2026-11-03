@@ -16,7 +16,7 @@ static class Program
             if (name is "dbe-link" or "dbe-lib") return await MsBuildAdapter.RunBuildTool(name[4..], stop.Token);
             if (string.Equals(System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dbe-remote-cl", StringComparison.OrdinalIgnoreCase))
                 return await MsBuildAdapter.Run(args, stop.Token);
-            if (args.Length == 0) throw new Rejected("Commands: serve config | info config | probe config output-directory | compile config manifest input-directory output-directory | pair new-directory compiler-path | self-test compiler-path child-probe-path output-directory");
+            if (args.Length == 0) throw new Rejected("Commands: serve config | info config | probe config output-directory | compile config manifest input-directory output-directory | pair new-directory compiler-path | requester new-directory | self-test compiler-path child-probe-path output-directory");
             if (args.Length == 1 && args[0] == "--version")
             { Console.WriteLine(typeof(Program).Assembly.GetName().Version!.ToString(3)); return 0; }
             if (args[0] == "runtime-info" && args.Length == 1)
@@ -27,6 +27,7 @@ static class Program
                 return 0;
             }
             if (args[0] == "pair" && args.Length == 3) { Identity.CreatePair(args[1], args[2]); return 0; }
+            if (args[0] == "requester" && args.Length == 2) { Identity.CreateRequester(args[1]); return 0; }
             if (args[0] == "scheduler-self-test" && args.Length is 3 or 4) { await SchedulerSelfTest.Run(args[1], args[2], args.Length == 4 ? args[3] : null); return 0; }
             if (args[0] == "admission-probe" && args.Length == 5)
             { await SchedulerSelfTest.Probe(args[1], args[2], args[3], int.Parse(args[4]), stop.Token); return 0; }

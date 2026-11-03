@@ -29,6 +29,8 @@ deployment.json
 worker-deployment.json
 msbuild.json
 host.json
+requester.json
+connection-*.json
 *.dbe.json
 __pycache__/
 *.py[cod]

@@ -1,2 +1,3 @@
 # Preserve exact source bytes, including compiler encoding fixtures and Windows launchers.
 * -text
+*.cmd whitespace=cr-at-eol

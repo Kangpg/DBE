@@ -1,5 +1,15 @@
 # 릴리스 노트
 
+## 0.3.1 · 2026-11-03
+
+연결 데이터의 수명을 빌드 산출물과 분리한다. `out` 정리로 요청 PC의 인증키가 없어지면 Worker가 켜져 있어도 TLS 연결이 끊기는 생성 경로를 수정했다.
+
+- 초기 Worker 패키지와 업그레이드의 client 인증서·설정·실행 runtime·deployment 기록은 기본 `%LOCALAPPDATA%\DBE\connections`에 보관한다. 전달 ZIP과 Worker runtime/compiler payload만 `out`에 만든다. 데이터와 산출물 트리의 중첩 및 `out` 아래 영구 데이터 위치를 거부한다. 업그레이드는 기존 pair를 보존한다.
+- 요청 PC 키 소실 시 사용하는 공개 인증서 기반 복구 도구를 추가한다. 개인 키는 요청 PC에 두고 Worker에는 등록 script·공개 인증서만 전달한다. 기존 Worker 인증서·compiler·state·수신 한도를 보존하고 `worker.json` 백업 후 허용 requester pin만 교체한다. 실행 중 또는 잠긴 Worker는 거부하며 반복 등록은 멱등적이다.
+- Worker가 돌려준 공개 연결 정보는 requester ID·인증서 지문을 검증한 뒤 영구 client 설정으로 등록한다. 새로운 server 인증서를 자동 신뢰하지 않는다. 삭제된 개인 키를 복원했다고 주장하지 않으며, 새 키 등록 후 이전 요청자는 인증할 수 없다.
+- Windows PowerShell 등록과 실제 두 합성 Worker의 mutual TLS·MSVC, 기존 설정/상태 보존·오류 거부·멱등성 및 산출물 경로 제거 뒤 설치/업그레이드 연결 등 26개 검증을 통과했다. 물리 Worker의 새 키 등록과 현재 프로젝트 성능 비교는 남아 있다. 이번 변경은 속도 개선 측정 결과를 추가하지 않는다.
+- 기존 기본 `deployment.json` 위치가 영구 데이터 폴더로 이동한다. 반환된 `DeploymentFile`을 사용한다. WorkerConfig는 설치 설정 원본이며, 실행 Worker는 전달 ZIP에서 배치한다. 기본 인증서 유효기간 30일과 단일 허용 requester 정책은 유지하며 자동 갱신/다중 사용자 등록은 별도 작업이다.
+
 ## 0.3.0 · 2026-11-03
 
 로컬 native 처리량 보존과 선택형 원격 공유 PDB 배치를 추가한다. **현재 프로젝트 속도 개선은 아직 재측정하지 않았다.**

@@ -19,7 +19,9 @@ $package = .\scripts\Package-Worker.ps1 -PublishDirectory $build.Directory `
 $package
 ```
 
-Worker마다 새 pair를 만든다. `WorkerZip`만 해당 Worker에 전달한다. `ClientConfig`, `ClientExecutable`와 `deployment.json`은 요청 PC에 보관한다. 인증서/개인 키/config와 compiler 사본을 Git에 넣지 않는다. Compiler 재배포 권한은 이 프로젝트가 부여하지 않는다.
+Worker마다 새 pair를 만든다. `WorkerZip`만 해당 Worker에 전달한다. `ClientConfig`, `ClientExecutable`와 `deployment.json`은 기본 `%LOCALAPPDATA%\DBE\connections`의 장기 보관 폴더에 생성된다. `-ConnectionDirectory`로 다른 위치를 지정할 수 있지만 `out` 아래는 거부한다. ZIP·compiler payload 등 전달 산출물만 `out`에 생성한다. WorkerConfig는 장기 보관한 설치 설정 원본이며 실제 Worker 실행 폴더는 전달 ZIP에서 만든다. 인증서/개인 키/config와 compiler 사본을 Git에 넣지 않는다. Compiler 재배포 권한은 이 프로젝트가 부여하지 않는다.
+
+기존 연결 파일을 잃었다면 [요청 PC 인증 연결 복구](connection.md#요청-pc-인증파일을-잃었을-때)를 따른다. 상태 정리용 Repair는 요청 PC의 삭제된 개인 키를 복원하지 않는다.
 
 ## Worker PC
 

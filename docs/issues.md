@@ -84,3 +84,10 @@ compiler 버전/identity와 실제 queue/receive/compile/return 상태를 표시
 DBE-002/003: 요청 PC의 native Job admission과 내부 `/MP` fan-out을 분리하고 선택형 v7의 2~4소스 공유 PDB 배치를 추가했다. 수신 PC budget은 변경하지 않았다. 원본 옵션·PCH, 4객체 링크/실행·DIA, 오류·취소와 실제 MSBuild 합성 검증을 통과했다. 전체 파일 접근 가상화·Agent 수명 PDB 공유는 미구현이다.
 
 DBE-006: 새 런타임의 두 물리 Worker와 현재 프로젝트 전체/무변경 재측정은 남아 있다. 다른 빌드와 겹쳐 중단한 예비 실행을 성공 시간으로 사용하지 않는다. 기존 이슈를 종료하거나 가속 달성으로 표시하지 않는다.
+
+
+## 0.3.1 연결 수명 수정
+
+DBE-008: `out` 정리로 과거 client key/config 경로가 사라져 물리 Worker 인증 검증이 막혔다. 초기 패키지·업그레이드의 생산 경계를 수정해 요청 PC 인증·deployment·client runtime을 영구 데이터 폴더로 분리했다. 키 소실 후 공개 인증서 등록·설정 백업·멱등 import 도구를 추가했고, 두 합성 Worker의 실제 TLS/MSVC 및 원래 산출물 경로 제거 뒤 업그레이드를 검증했다. 물리 Worker 재등록과 새 머신 문서 재현은 열린 항목이다.
+
+DBE-003/006: 0.3.0의 PDB 배치와 native admission 성능 비교는 인증 연결 복구 후 이어간다. 이번 수정만으로 가속을 주장하지 않는다.
