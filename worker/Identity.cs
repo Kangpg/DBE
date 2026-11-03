@@ -69,7 +69,7 @@ static class Identity
     {
         path = System.IO.Path.GetFullPath(path);
         Wire.NoReparse(path);
-        if (new FileInfo(path).Length > Wire.HeaderLimit) throw new Rejected("Config too large");
+        if (new FileInfo(path).Length > 64 * 1024) throw new Rejected("Config too large");
         return (JsonSerializer.Deserialize<T>(File.ReadAllText(path), Wire.Json) ?? throw new Rejected("Null config"),
             System.IO.Path.GetDirectoryName(path)!);
     }

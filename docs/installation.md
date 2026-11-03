@@ -32,7 +32,7 @@ $initiatorAddress = Read-Host '허용할 요청 PC IPv4'
 .\Allow-WorkerFirewall.ps1 -InitiatorAddress $initiatorAddress
 ```
 
-기본 동시 2개, 작업당 2GiB, compiler 120초 한도다. 코어 수를 그대로 슬롯으로 설정하지 않는다. 사용자 활동에 따른 자동 양보는 미완성이므로 Worker 사용자가 영향을 받으면 직접 중지한다.
+현재 Worker의 허용 동시는 1–2개이고 기본값은 2개다. 작업당 2GiB, compiler 120초 한도다. 코어 수를 그대로 슬롯으로 설정하지 않는다. 사용자 활동에 따른 자동 양보는 미완성이므로 Worker 사용자가 영향을 받으면 직접 중지한다.
 
 ## VSIX
 

@@ -111,7 +111,7 @@ static partial class MsBuildAdapter
             // /MP already permits arbitrary completion order. Start estimated
             // heavier sources first within this Job; keep result indexing and
             // publication order intact. Size is a hint, not an admission fact.
-            IEnumerable<string> commandSources = sources.Select(x => x.Source);
+            IEnumerable<string> commandSources = sources.Select(x => x.SourceArgument ?? x.Source);
             if (sources.Length > placement.SlotCost * 4)
                 commandSources = commandSources.OrderByDescending(SourceWeight);
             File.WriteAllText(response, string.Join(' ', LocalCommand(sources[0], staging + Path.DirectorySeparatorChar,

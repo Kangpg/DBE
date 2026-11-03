@@ -17,6 +17,13 @@ static class Program
             if (string.Equals(System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dbe-remote-cl", StringComparison.OrdinalIgnoreCase))
                 return await MsBuildAdapter.Run(args, stop.Token);
             if (args.Length == 0) throw new Rejected("Commands: serve config | info config | probe config output-directory | compile config manifest input-directory output-directory | pair new-directory compiler-path | self-test compiler-path child-probe-path output-directory");
+            if (args[0] == "runtime-info" && args.Length == 1)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new {
+                    runtimeDirectory = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
+                }, Wire.Json));
+                return 0;
+            }
             if (args[0] == "pair" && args.Length == 3) { Identity.CreatePair(args[1], args[2]); return 0; }
             if (args[0] == "scheduler-self-test" && args.Length is 3 or 4) { await SchedulerSelfTest.Run(args[1], args[2], args.Length == 4 ? args[3] : null); return 0; }
             if (args[0] == "admission-probe" && args.Length == 5)
@@ -28,7 +35,11 @@ static class Program
                 return 0;
             }
             if (args[0] == "self-test" && args.Length == 4) { await SelfTest.Run(args[1], args[2], args[3]); return 0; }
-            if (args[0] == "native-pch-test" && args.Length == 4)
+            if (args[0] == "reuse-self-test" && args.Length == 5)
+            { await NativeReuseSelfTest.Run(args[1], args[2], args[3], args[4]); return 0; }
+            if (args[0] == "reuse-remote-test" && args.Length == 6)
+            { await NativeReuseSelfTest.Run(args[2], args[3], args[4], args[5], args[1]); return 0; }
+            if (args[0] is "native-pch-test" or "native-input-test" && args.Length == 4)
             {
                 var (config, root) = Identity.ReadConfig<ClientConfig>(args[1]);
                 using var client = new Client(config, root);
@@ -36,11 +47,16 @@ static class Program
                 if (Directory.Exists(output)) throw new Rejected("Test output must be new");
                 Directory.CreateDirectory(output);
                 stop.CancelAfter(TimeSpan.FromSeconds(180));
-                Capabilities remote = await client.Info(stop.Token, 4);
+                Capabilities remote = await client.Info(stop.Token, args[0] == "native-input-test" ? 5 : 4);
                 using var compiler = new Compiler(args[2]);
                 if (remote.Toolchain != compiler.Identity) throw new Rejected("Local verifier and Worker compiler must match");
-                await SelfTest.NativePchContracts(client, remote.Toolchain, args[2], output, stop.Token);
-                Console.WriteLine("PASS native-pch-test");
+                if (args[0] == "native-input-test")
+                {
+                    if (remote.DeferredInputs != true) throw new Rejected("Update Worker native-input runtime");
+                    await SelfTest.MappedContracts(client, remote.Toolchain, args[2], output, stop.Token);
+                }
+                else await SelfTest.NativePchContracts(client, remote.Toolchain, args[2], output, stop.Token);
+                Console.WriteLine("PASS " + args[0]);
                 return 0;
             }
             if (args[0] == "serve" && args.Length == 2)
@@ -57,9 +73,9 @@ static class Program
                 var (config, root) = Identity.ReadConfig<ClientConfig>(args[1]);
                 using var client = new Client(config, root);
                 stop.CancelAfter(TimeSpan.FromSeconds(180));
-                if (args[0] == "info" && args.Length == 2)
+                if (args[0] == "info" && args.Length is 2 or 3)
                 {
-                    Console.WriteLine(JsonSerializer.Serialize(await client.Info(stop.Token), Wire.Json)); return 0;
+                    Console.WriteLine(JsonSerializer.Serialize(await client.Info(stop.Token, args.Length == 3 ? int.Parse(args[2]) : 1), Wire.Json)); return 0;
                 }
                 if (args[0] == "probe" && args.Length == 3)
                 {

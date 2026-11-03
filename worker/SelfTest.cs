@@ -30,6 +30,7 @@ static class SelfTest
         validation.Check(header, PreparedInput.EncodingFor(65001));
         try { validation.Check(header, legacy); throw new Exception("Unexpected cached encoding acceptance"); }
         catch (UnsupportedCompile) { Check(true, "header-validation-distinguishes-bytes-and-codepage-with-identical-stat"); }
+        NativeInventoryContracts(compilerPath, directory);
         string pair = Path.Combine(directory, "pair");
         Identity.CreatePair(pair, compilerPath, "127.0.0.1");
         var (workerConfig, workerRoot) = Identity.ReadConfig<WorkerConfig>(Path.Combine(pair, "worker", "worker.json"));
@@ -55,7 +56,9 @@ static class SelfTest
             Check(reply.Status == "completed" && File.Exists(Path.Combine(resultDir, "result.obj")), "real-msvc-transfer-hash-object");
             VerifyObject(compilerPath, resultDir, 42);
             Check(true, "link-and-execute-remote-object-42");
+            NativePathContracts(compilerPath, directory);
             await NativePchContracts(client, info.Toolchain, compilerPath, directory, token);
+            await MappedContracts(client, info.Toolchain, compilerPath, directory, token);
             string symbolsDir = Path.Combine(directory, "v3-pdb");
             var symbolsRequest = Manifest() with { Version = 3, Files = [new InputFile("main.cpp", 0, "")], Options = ["/utf-8", "/Zi", "/JMC", "/Od", "/MDd"] };
             string prepared = Path.Combine(directory, "v3-input"); Directory.CreateDirectory(prepared);
@@ -145,6 +148,96 @@ static class SelfTest
         }
         finally { worker.Stop(); await server; }
         File.WriteAllText(Path.Combine(directory, "checks.json"), JsonSerializer.Serialize(new { checks, scope = "real local TLS loopback and real installed MSVC; two-machine run still required" }, Wire.Json));
+    }
+
+    private static void NativePathContracts(string compiler, string directory)
+    {
+        string drive = Directory.CreateDirectory(Path.Combine(directory, "virtual-drive")).FullName;
+        string project = Directory.CreateDirectory(Path.Combine(drive, "project")).FullName;
+        Directory.CreateDirectory(Path.Combine(project, "out"));
+        File.WriteAllText(Path.Combine(project, "value.h"), "#define VALUE 42\n");
+        File.WriteAllText(Path.Combine(project, "main.cpp"), "#include \"Q:\\project\\value.h\"\nconstexpr bool same(const char*a,const char*b){return *a==*b&&(!*a||same(a+1,b+1));}\nstatic_assert(same(__FILE__,\"Q:\\\\project\\\\main.cpp\"));\nextern \"C\" int dbe_probe(){return VALUE;}\n");
+        string mapping = "Q=" + char.ToUpperInvariant(drive[0]) + drive[1..];
+        var compiled = Native.Run(compiler, project, "/nologo /c /std:c++20 /Z7 /GS- /X /FoQ:\\project\\out\\result.obj Q:\\project\\main.cpp",
+            10, 2048, CancellationToken.None, tempDirectory: Path.Combine(directory, "success", "tmp"), mapping: mapping, logicalCwd: "Q:\\project");
+        Check(compiled.Kind == 0 && compiled.ExitCode == 0, "native-process-map-preserves-absolute-include-and-file-macro:" + JsonSerializer.Serialize(compiled));
+        VerifyObject(compiler, Path.Combine(project, "out"), 42);
+        Check(true, "native-process-map-object-links-and-executes");
+        File.WriteAllText(Path.Combine(project, "relative.cpp"), "#include \"value.h\"\nconstexpr bool same(const char*a,const char*b){return *a==*b&&(!*a||same(a+1,b+1));}\nstatic_assert(same(__FILE__,\"relative.cpp\"));\nextern \"C\" int relative_probe(){return VALUE;}\n");
+        var relative = Native.Run(compiler, project, "/nologo /c /std:c++20 /Z7 /GS- /X /FoQ:\\project\\out\\relative.obj relative.cpp",
+            10, 2048, CancellationToken.None, tempDirectory: Path.Combine(directory, "success", "tmp"), mapping: mapping, logicalCwd: "Q:\\project");
+        Check(relative.Kind == 0 && relative.ExitCode == 0, "native-process-map-preserves-relative-cwd-and-file-macro:" + Encoding.UTF8.GetString(relative.Stdout));
+    }
+
+    internal static async Task MappedContracts(Client client, string identity, string compiler, string directory, CancellationToken token)
+    {
+        string input = Directory.CreateDirectory(Path.Combine(directory, "mapped-input", "Q", "project")).FullName;
+        string sdk = Directory.CreateDirectory(Path.Combine(directory, "mapped-input", "C", "dbe-native-fixture")).FullName;
+        File.WriteAllText(Path.Combine(sdk, "sdk.h"), "#define SDK_VALUE 10\n");
+        File.WriteAllText(Path.Combine(input, "pch.h"), "#pragma once\n#include \"Q:\\project\\generated.h\"\n#include <sdk.h>\nstatic_assert(SDK_VALUE==10);\n");
+        File.WriteAllText(Path.Combine(input, "generated.h"), "#define VALUE 42\n");
+        File.WriteAllText(Path.Combine(input, "pch.cpp"), "#include \"pch.h\"\nextern \"C\" int producer_value(){return VALUE;}\n");
+        File.WriteAllText(Path.Combine(input, "main.cpp"), "#include \"pch.h\"\nextern \"C\" int producer_value();\nextern \"C\" int dbe_probe(){return producer_value();}\n");
+        var options = new[] { "/utf-8", "/std:c++20", "/Zi", "/GS-", "/Od" };
+        var files = Directory.GetFiles(Path.Combine(directory, "mapped-input"), "*", SearchOption.AllDirectories).Select(p => new InputFile(
+            Path.GetRelativePath(Path.Combine(directory, "mapped-input"), p).Replace('\\', '/'), new FileInfo(p).Length,
+            Wire.HashFile(p), File.GetLastWriteTimeUtc(p).Ticks)).ToArray();
+        var recipe = new NativeRecipe("Q:\\project\\pch.cpp", options, "pch.h", "Q:\\project\\shared.pch", "Q:\\project\\out\\pch.obj");
+        var request = new Request(5, "compile", Guid.NewGuid().ToString("N"), identity, "Q/project/main.cpp", files, options,
+            NativeInput: new MappedCompile("Q:\\project\\", "Q:\\project\\main.cpp", "C:\\dbe-native-fixture\\", recipe));
+        string local = Directory.CreateDirectory(Path.Combine(directory, "local-native-producer")).FullName;
+        string localTemporary = Directory.CreateDirectory(Path.Combine(local, "tmp")).FullName;
+        using var runtime = new RuntimeInputs(compiler, Path.Combine(directory, "local-runtime"));
+        runtime.Populate(Path.Combine(directory, "mapped-input"));
+        Directory.CreateDirectory(Path.Combine(input, "out"));
+        var localProducer = Native.Run("Z:\\cl.exe", input, string.Join(' ', options.Concat(new[] {
+            "/nologo", "/c", "/Ycpch.h", "/FpQ:\\project\\shared.pch",
+            "/Fd" + MappedCompile.PhysicalPath(Path.Combine(local, "local.pdb")),
+            "/FoQ:\\project\\out\\pch.obj", "Q:\\project\\pch.cpp"
+        }).Select(ClInvocation.Quote)), 10, 2048, token,
+            tempDirectory: localTemporary,
+            mapping: "Q=" + Path.GetDirectoryName(input)! + "\nC=" + Path.GetDirectoryName(sdk)! + "\nZ=" + Path.GetDirectoryName(compiler)!,
+            logicalCwd: "Q:\\project", include: "C:\\dbe-native-fixture");
+        Check(localProducer.Kind == 0 && localProducer.ExitCode == 0, "mapped-native-local-PCH-producer:" + JsonSerializer.Serialize(localProducer) + Encoding.UTF8.GetString(localProducer.Stdout) + Encoding.UTF8.GetString(localProducer.Stderr));
+        File.Copy(Path.Combine(input, "out", "pch.obj"), Path.Combine(local, "producer.obj"));
+        int deferredIndex = Array.FindIndex(files, file => file.Path.EndsWith("/sdk.h", StringComparison.Ordinal));
+        var deferredFiles = files.ToArray();
+        deferredFiles[deferredIndex] = files[deferredIndex] with { Sha256 = "", Deferred = true };
+        using (var blocked = new FileStream(Path.Combine(sdk, "sdk.h"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Reply needed = await client.Compile(request with { Files = deferredFiles }, Path.Combine(directory, "mapped-input"),
+                Path.Combine(directory, "deferred-input"), token);
+            Check(needed.Status == "input-required" && needed.RequiredInputs!.SequenceEqual([deferredIndex]) &&
+                needed.Output is null && needed.Pdb is null && needed.ProducerObject is null, "deferred-input-not-uploaded-and-requested-by-compiler");
+        }
+        async Task<(Reply Reply, string Output)> Submit(int i)
+        {
+            // The preceding deferred-input response can arrive before its
+            // workspace cleanup releases the slot. Busy is admission, not a
+            // compiler result; retry only that explicit protocol response.
+            for (int retry = 0; retry < 100; retry++)
+            {
+                string output = Path.Combine(directory, "mapped-native-" + i + "-" + retry);
+                Reply reply = await client.Compile(request with { Attempt = Guid.NewGuid().ToString("N") },
+                    Path.Combine(directory, "mapped-input"), output, token);
+                if (reply.Status != "busy") return (reply, output);
+                await Task.Delay(25, token);
+            }
+            throw new TimeoutException("Mapped native fixture admission remained busy");
+        }
+        var concurrent = await Task.WhenAll(Enumerable.Range(0, 2).Select(Submit));
+        for (int i = 0; i < concurrent.Length; i++)
+        {
+            var (reply, output) = concurrent[i];
+            Check(reply.Status == "completed" && reply.Pdb is not null && reply.ProducerObject is not null,
+                "mapped-native-PCH-Zi-artifacts-" + i + ":" + (File.Exists(Path.Combine(output, "stdout.bin")) ? Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(output, "stdout.bin"))) : reply.Message));
+            VerifyObject(compiler, output, 42, true);
+            Check(true, "mapped-native-PCH-Zi-link-execute-" + i);
+            File.Copy(Path.Combine(local, "producer.obj"), Path.Combine(output, "producer.obj"), true);
+            File.Copy(Path.Combine(local, "local.pdb"), Path.Combine(output, "local.pdb"), true);
+            VerifyObject(compiler, output, 42, true);
+            Check(true, "mapped-native-remote-consumer-links-original-local-PCH-object-" + i);
+        }
     }
 
     internal static async Task NativePchContracts(Client client, string identity, string compiler, string directory, CancellationToken token)
@@ -253,6 +346,47 @@ static class SelfTest
         }
         finally { if (!owner.HasExited) { owner.Kill(); owner.WaitForExit(5000); } }
     }
+    private static void NativeInventoryContracts(string compiler, string directory)
+    {
+        string scope = Directory.CreateDirectory(Path.Combine(directory, "inventory")).FullName;
+        string project = Directory.CreateDirectory(Path.Combine(scope, "project")).FullName;
+        string sibling = Directory.CreateDirectory(Path.Combine(scope, "sibling")).FullName;
+        string source = Path.Combine(project, "main.cpp"), header = Path.Combine(sibling, "value.h");
+        string opaque = Path.Combine(sibling, "extensionless"), unused = Path.Combine(project, "unused.payload");
+        File.WriteAllText(source, "#include \"../sibling/value.h\"\n#include \"../sibling/extensionless\"\n");
+        File.WriteAllText(header, "#define VALUE 42\n"); File.WriteAllText(opaque, "#define OTHER 7\n"); File.WriteAllText(unused, "A");
+        string toolchain = Directory.CreateDirectory(Path.Combine(directory, "inventory-toolchain")).FullName;
+        string includes = Directory.CreateDirectory(Path.Combine(toolchain, "include")).FullName;
+        string usedTool = Path.Combine(includes, "used.h"), unusedTool = Path.Combine(toolchain, "unused.h");
+        File.WriteAllText(usedTool, "#define SDK_VALUE 7\n"); File.WriteAllText(unusedTool, "#define UNSELECTED_SDK_VALUE 0\n");
+        var invocation = new ClInvocation(source, Path.Combine(project, "main.obj"), ["/utf-8", "/X", "/std:c++20", "/I" + includes + Path.DirectorySeparatorChar], [], [], 65001, null, null);
+        var config = new AdapterConfig(compiler, "", Path.Combine(directory, "inventory-state"), "Hybrid", NativeInputs: true,
+            NativeInputRoots: [scope], NativeToolchainRoots: [toolchain]);
+        var snapshot = new NativeBuild(config, [invocation]);
+        Request request = snapshot.Manifest(invocation, Guid.NewGuid().ToString("N"), new string('a', 64));
+        Check(request.Files!.Any(file => file.Path == MappedCompile.InputPath(header) && !file.Deferred), "native-inventory-includes-parent-relative-sibling");
+        Check(request.Files!.Any(file => file.Path == MappedCompile.InputPath(usedTool)) &&
+            !request.Files!.Any(file => file.Path == MappedCompile.InputPath(unusedTool)), "toolchain-scope-inventories-only-selected-include-tree");
+        try
+        {
+            var outside = invocation with { PreprocessOptions = ["/utf-8", "/X", "/I" + directory] };
+            _ = new NativeBuild(config, [outside]).Manifest(outside, Guid.NewGuid().ToString("N"), new string('a', 64));
+            throw new Exception("Unexpected out-of-scope input acceptance");
+        }
+        catch (UnsupportedCompile) { Check(true, "native-inventory-rejects-unrelated-include-root"); }
+        File.WriteAllText(unused, "Unused metadata changed independently");
+        Check(snapshot.Unchanged(), "unused-deferred-metadata-is-not-consumed-input");
+        int index = Array.FindIndex(request.Files!, file => file.Path == MappedCompile.InputPath(opaque));
+        snapshot.Resolve(request, [index]);
+        var stamp = File.GetLastWriteTimeUtc(opaque);
+        File.WriteAllText(opaque, "#define OTHER 8\n"); File.SetLastWriteTimeUtc(opaque, stamp);
+        Check(!snapshot.Unchanged(), "resolved-deferred-bytes-are-validated-after-compile");
+        snapshot = new NativeBuild(config, [invocation]);
+        _ = snapshot.Manifest(invocation, Guid.NewGuid().ToString("N"), new string('a', 64));
+        File.SetLastWriteTimeUtc(header, File.GetLastWriteTimeUtc(header).AddSeconds(2));
+        Check(!snapshot.Unchanged(), "native-input-timestamp-change-is-semantic");
+    }
+
     private static async Task Eventually(Func<bool> predicate, CancellationToken token)
     {
         var watch = Stopwatch.StartNew();

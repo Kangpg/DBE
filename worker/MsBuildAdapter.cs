@@ -2,17 +2,27 @@ using System.Text;
 using System.Text.Json;
 
 namespace Dbe;
-sealed record AdapterConfig(string RealCompiler, string ClientConfig, string StateDirectory, string Mode, bool AllowCompilerMismatch = false, string? HostPolicy = null, string[]? AdditionalClients = null)
+sealed record AdapterConfig(string RealCompiler, string ClientConfig, string StateDirectory, string Mode, bool AllowCompilerMismatch = false, string? HostPolicy = null, string[]? AdditionalClients = null,
+    bool NativeInputs = false, string[]? NativeInputRoots = null, string[]? NativeArtifactRoots = null, string[]? NativeToolchainRoots = null)
 {
     internal IEnumerable<string> Clients => new[] { ClientConfig }.Concat(AdditionalClients ?? []);
+    internal static (AdapterConfig Config, string Root) Read(string path)
+    {
+        var (config, root) = Identity.ReadConfig<AdapterConfig>(path);
+        if (string.IsNullOrWhiteSpace(config.StateDirectory)) throw new Rejected("Adapter state directory is missing");
+        return (config with { StateDirectory = Path.GetFullPath(Path.Combine(root, config.StateDirectory)) }, root);
+    }
 }
-sealed record ObjectRecord(string Key, string Hash, InputFile? Pdb = null);
+sealed record ObjectRecord(string Key, string Hash, InputFile? Pdb = null, InputFile? ProducerPdb = null);
 
 static partial class MsBuildAdapter
 {
+    // The initiator owns a multi-file native batch, unlike a bounded incoming
+    // Worker request. Cancellation and process-family ownership still apply.
+    private const int LocalExecutionSeconds = 1200;
     internal static async Task<int> RunBuildTool(string tool, CancellationToken token)
     {
-        var (config, _) = Identity.ReadConfig<AdapterConfig>(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
+        var (config, _) = AdapterConfig.Read(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
         using var scheduler = new HostScheduler(config.HostPolicy ?? throw new Rejected("Build tool requires host policy"), config.Clients);
         int memory = tool == "link" && scheduler.Policy.LinkMemoryMiB > 0 ? scheduler.Policy.LinkMemoryMiB : scheduler.Policy.LocalMemoryMiB;
         int slots = (memory + scheduler.Policy.LocalMemoryMiB - 1) / scheduler.Policy.LocalMemoryMiB;
@@ -21,15 +31,16 @@ static partial class MsBuildAdapter
         Console.WriteLine("DBE: local " + tool + " " + Environment.CurrentDirectory);
         lease.BeginExecution();
         Execution result = await Task.Factory.StartNew(() => Native.Run(executable, Environment.CurrentDirectory, ClInvocation.RawTail(),
-            1200, memory, token, true), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            LocalExecutionSeconds, memory, token, true), token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         if (result.Kind != 5) lease.ConfirmCleanup();
         Emit(result);
         return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail(tool + " supervisor kind=" + result.Kind);
     }
     internal static async Task<int> Run(string[] args, CancellationToken token)
     {
-        var (config, root) = Identity.ReadConfig<AdapterConfig>(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
+        var (config, root) = AdapterConfig.Read(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
         if (config.Mode is not ("Local" or "Auto" or "Distributed" or "Hybrid")) throw new Rejected("Invalid DBE mode");
+        if (config.NativeInputs && config.Mode != "Hybrid") throw new Rejected("Native inputs require Hybrid mode");
         if (config.Mode != "Hybrid" && config.AdditionalClients is { Length: > 0 }) throw new Rejected("Multiple Workers require Hybrid mode");
         using var scheduler = config.Mode == "Hybrid" ? new HostScheduler(config.HostPolicy ?? throw new Rejected("Hybrid requires a shared host policy"), config.Clients) : null;
         string raw = ClInvocation.RawTail();
@@ -37,7 +48,16 @@ static partial class MsBuildAdapter
         ClInvocation[] batch;
         try
         {
-            if (ClInvocation.CreatesPch(args)) return await LocalBounded(config, raw, "required PCH producer", token, scheduler);
+            if (ClInvocation.CreatesPch(args))
+            {
+                int result = await LocalBounded(config, raw, "required PCH producer", token, scheduler);
+                if (result == 0 && config.NativeInputs)
+                {
+                    try { foreach (var producer in ClInvocation.ParseBatch(args, true)) NativeBuild.Remember(config, producer); }
+                    catch (Exception e) when (e is UnsupportedCompile or Rejected) { Console.WriteLine("DBE: native PCH recipe unavailable: " + e.Message); }
+                }
+                return result;
+            }
             batch = ClInvocation.ParseBatch(args);
         }
         catch (UnsupportedCompile e) { return await Fallback(config, raw, e.Message, token, scheduler); }
@@ -51,6 +71,7 @@ static partial class MsBuildAdapter
         int concurrency = scheduler is null ? 2 : (sharedPdb ? Math.Min(2, scheduler.Policy.LocalSlots) : scheduler.Policy.LocalSlots) + scheduler.PipelineCapacity;
         var compiler = new Lazy<Compiler>(() => new Compiler(config.RealCompiler));
         var validation = new PreparedInput.ValidationCache();
+        var native = config.NativeInputs ? new NativeBuild(config, batch) : null;
         try {
         await Parallel.ForEachAsync(Enumerable.Range(0, Math.Min(concurrency, batch.Length)), new ParallelOptions
         { MaxDegreeOfParallelism = concurrency, CancellationToken = token }, async (_, ct) =>
@@ -73,15 +94,22 @@ static partial class MsBuildAdapter
                 }
                 while (indices.Count < groupLimit && pending.TryDequeue(out int next)) indices.Add(next);
             }
-            if (indices.Count == 1) results[index] = await RunOne(config, root, invocation, ct, scheduler, placement, compiler, validation);
+            if (indices.Count == 1) results[index] = native is not null && placement is { IsLocal: false }
+                ? await RunNative(config, root, invocation, ct, scheduler!, placement, compiler, native)
+                : await RunOne(config, root, invocation, ct, scheduler, placement, compiler, validation);
             else {
                 int result = await CompileLocalBatch(config, root, indices.Select(i => batch[i]).ToArray(), placement!, ct);
                 foreach (int i in indices) results[i] = result;
             }
             }
         });
+        if (native is not null && !native.Unchanged())
+        {
+            foreach (var invocation in batch) DeleteObject(invocation.Object);
+            return Fail("Native build inputs changed during compilation");
+        }
         return results.FirstOrDefault(x => x != 0);
-        } finally { if (compiler.IsValueCreated) compiler.Value.Dispose(); }
+        } finally { native?.Dispose(); if (compiler.IsValueCreated) compiler.Value.Dispose(); }
     }
 
     private static async Task<int> RunOne(AdapterConfig config, string root, ClInvocation invocation, CancellationToken token, HostScheduler? scheduler, HostScheduler.Lease? placement, Lazy<Compiler> compiler, PreparedInput.ValidationCache validation)
@@ -156,7 +184,7 @@ static partial class MsBuildAdapter
         if (File.Exists(invocation.Object) && File.Exists(recordPath))
         {
             ObjectRecord? prior = JsonSerializer.Deserialize<ObjectRecord>(File.ReadAllText(recordPath), Wire.Json);
-            if (prior is not null && prior.Key == key && prior.Hash == Wire.HashFile(invocation.Object) && PdbMatches(prior.Pdb, invocation.Object))
+            if (prior is not null && prior.Key == key && prior.Hash == Wire.HashFile(invocation.Object) && PdbMatches(prior.Pdb, invocation.Object) && PdbMatches(prior.ProducerPdb, invocation.Object))
             {
                 // Hybrid's MSBuild tracker already selected this TU because an
                 // input/command/PCH became newer. Content reuse is valid, but
@@ -196,8 +224,22 @@ static partial class MsBuildAdapter
             return unchecked((int)(result.ExitCode ?? 1));
         }
         if (result.Status != "completed") return await FallbackOne("Worker returned " + result.Status + ": " + result.Message);
+        PublishRemote(invocation, outputRoot, result, attempt, objectState, key, token);
+        Console.WriteLine("DBE: remote " + remote.Machine + " compiler=" + remote.CompilerVersion + " -> " + invocation.Object);
+        Record(attemptRoot, "remote-completed", invocation, remote, inputHash);
+        Event(attemptRoot, "remote-completed", invocation, remote.Machine);
+        return 0;
+    }
+    private static void PublishRemote(ClInvocation invocation, string outputRoot, Reply result, string attempt, string objectState, string key, CancellationToken token, NativeClientCache? cache = null)
+    {
+        string recordPath = Path.Combine(objectState, "object.json");
         token.ThrowIfCancellationRequested();
         Directory.CreateDirectory(Path.GetDirectoryName(invocation.Object)!);
+        if (result.ProducerPdb is { } seed)
+        {
+            if (cache is null) throw new Rejected("Reusable producer symbols need their publication owner");
+            cache.Publish(seed, Path.Combine(outputRoot, seed.Path), Path.Combine(Path.GetDirectoryName(invocation.Object)!, seed.Path));
+        }
         // Immutable, attempt-named symbols must be in place before the object
         // becomes visible. LINK searches the object's directory for its PDB.
         if (result.Pdb is { } pdb)
@@ -215,12 +257,8 @@ static partial class MsBuildAdapter
             File.Move(pending, invocation.Object, true);
         }
         finally { if (File.Exists(pending)) File.Delete(pending); }
-        File.WriteAllText(recordPath + ".new", JsonSerializer.Serialize(new ObjectRecord(key, result.Output!.Sha256, result.Pdb), Wire.Json));
+        File.WriteAllText(recordPath + ".new", JsonSerializer.Serialize(new ObjectRecord(key, result.Output!.Sha256, result.Pdb, result.ProducerPdb), Wire.Json));
         File.Move(recordPath + ".new", recordPath, true);
-        Console.WriteLine("DBE: remote " + remote.Machine + " compiler=" + remote.CompilerVersion + " -> " + invocation.Object);
-        Record(attemptRoot, "remote-completed", invocation, remote, inputHash);
-        Event(attemptRoot, "remote-completed", invocation, remote.Machine);
-        return 0;
     }
 
     private static async Task<int> CompileLocal(AdapterConfig config, string root, ClInvocation invocation, string attemptRoot, string objectState,
@@ -229,7 +267,7 @@ static partial class MsBuildAdapter
         Directory.CreateDirectory(Path.GetDirectoryName(invocation.Object)!);
         using var output = new LocalOutput(config, root, attemptRoot, new[] { "result.obj" });
         string pending = Path.Combine(output.Root, "result.obj");
-        var options = LocalCommand(invocation, pending, 1, new[] { invocation.Source });
+        var options = LocalCommand(invocation, pending, 1, new[] { invocation.SourceArgument ?? invocation.Source });
         string response = Path.Combine(attemptRoot, "scheduled-local.rsp");
         File.WriteAllText(response, string.Join(' ', options.Select(ClInvocation.Quote)), Encoding.Unicode);
         Event(attemptRoot, kind + "-running", invocation, Environment.MachineName);
@@ -267,7 +305,7 @@ static partial class MsBuildAdapter
         lease?.BeginExecution();
         Execution result;
         using (BuildTiming.Measure(stage ?? (BuildTiming.Enabled ? "compile.local." + (lease?.SlotCost ?? 1) : "")))
-            result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, 120, lease?.MemoryMiB ?? memory, token, true);
+            result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, lease?.MemoryMiB ?? memory, token, true);
         output?.CompleteExecution(result);
         if (result.Kind != 5) lease?.ConfirmCleanup();
         return result;
@@ -291,7 +329,7 @@ static partial class MsBuildAdapter
     {
         token.ThrowIfCancellationRequested();
         Console.WriteLine("DBE: local (" + reason + ")");
-        Execution result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, 120, 4096, token, true);
+        Execution result = Native.Run(config.RealCompiler, Environment.CurrentDirectory, raw, LocalExecutionSeconds, 4096, token, true);
         Emit(result);
         return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail("Local compiler supervisor kind=" + result.Kind);
     }

@@ -6,7 +6,7 @@ using Microsoft.Win32.SafeHandles;
 namespace Dbe;
 
 // Prototype identity covers the locked Hostx64/x64 executable/DLL directory.
-// It is NOT an SDK/header/toolchain closure. /X + explicit inputs is the only profile.
+// It is not an SDK/header closure; each execution profile validates its own inputs.
 sealed class Compiler : IDisposable
 {
     internal string Path { get; }
@@ -64,7 +64,7 @@ static class Native
     private static extern void DbeRun(string exe, string cwd, string args, string? environment, SafeWaitHandle cancel,
         uint timeout, uint memory, [Out] byte[] stdout, [Out] byte[] stderr, uint capacity, out Result result);
 
-    internal static Execution Run(string exe, string cwd, string args, int seconds, int memoryMiB, CancellationToken token, bool inheritEnvironment = false, string? tempDirectory = null)
+    internal static Execution Run(string exe, string cwd, string args, int seconds, int memoryMiB, CancellationToken token, bool inheritEnvironment = false, string? tempDirectory = null, string? mapping = null, string? logicalCwd = null, string? include = null)
     {
         using var cancel = new EventWaitHandle(false, EventResetMode.ManualReset);
         using var registration = token.Register(() => cancel.Set());
@@ -77,7 +77,13 @@ static class Native
             ["VSLANG"] = "1033"
         };
         string block = string.Join('\0', environment.Select(p => p.Key + "=" + p.Value)) + "\0\0";
+        if (include is not null) { environment["INCLUDE"] = include; block = string.Join('\0', environment.Select(p => p.Key + "=" + p.Value)) + "\0\0"; }
         byte[] stdout = new byte[Wire.DiagnosticLimit], stderr = new byte[Wire.DiagnosticLimit];
+        if (mapping is not null)
+        {
+            args = string.Join(' ', new[] { mapping, logicalCwd ?? throw new Rejected("Mapped execution requires logical cwd"), exe, args }.Select(ClInvocation.Quote));
+            exe = Path.Combine(AppContext.BaseDirectory, "dbe-paths.exe");
+        }
         DbeRun(exe, cwd, args, inheritEnvironment ? null : block, cancel.SafeWaitHandle, (uint)seconds * 1000, (uint)memoryMiB,
             stdout, stderr, Wire.DiagnosticLimit, out var result);
         return new Execution(result.Kind, result.ExitCode, result.Error, result.ProcessId,

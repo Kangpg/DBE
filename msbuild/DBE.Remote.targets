@@ -37,7 +37,7 @@
         NativeLocal="$([System.String]::Equals('$(DBELocal)', 'true'))"
         StateFile="$(IntDir)dbe-input-inventory.txt" Sources="@(ClCompile)" TrackerDirectory="$(TLogLocation)"
         ObservedInputExclusions="$(ExcludePath);$(SystemRoot);$(windir);$([System.IO.Path]::GetDirectoryName('$(DBEConfiguredCompiler)'));$(DBERuntimeDirectories)"
-        SearchRoots="$(IncludePath);$(ExternalIncludePath);@(ClCompile->'%(AdditionalIncludeDirectories)');@(ClCompile->'%(ExternalIncludePath)')"
+        SearchRoots="$(DBENativeInputRoots);$(IncludePath);$(ExternalIncludePath);@(ClCompile->'%(AdditionalIncludeDirectories)');@(ClCompile->'%(ExternalIncludePath)')"
         ExcludedRoots="$(IntDir);$(OutDir);$(DBEAdapterDirectory);$(DBEStateDirectory);$(DBELeaseDirectory)"
         TrackedRuntimeRoots="$(DBEAdapterDirectory);$(DBEStateDirectory);$(DBELeaseDirectory)"
         RuntimeInputs="$(DBEAdapterDirectory)\msbuild.json;$(DBEAdapterDirectory)\dbe-remote-cl.exe;$(DBEAdapterDirectory)\dbe-worker.dll;$(DBEAdapterDirectory)\DBE.Remote.targets;$(DBEAdapterDirectory)\DbeInputInventory.cs;$(DBELocalInputs)">

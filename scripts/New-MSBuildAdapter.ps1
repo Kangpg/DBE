@@ -8,6 +8,9 @@ param(
     [string]$StateDirectory='state',
     [string[]]$AdditionalClients=@(),
     [switch]$AllowCompilerMismatch,
+    [switch]$NativeInputs,
+    [string[]]$NativeInputRoots=@(),
+    [string[]]$NativeToolchainRoots=@(),
     [ValidateSet('2022','2026')][string]$VisualStudio='2022'
 )
 $ErrorActionPreference='Stop'
@@ -17,6 +20,8 @@ $root=Split-Path $PSScriptRoot -Parent
 $tools=Get-DbeToolchain $VisualStudio (Join-Path $root 'native\dbe-cl.vcxproj') 'v143'
 if(Test-Path -LiteralPath $Destination) { throw 'Adapter destination must be new.' }
 if($Mode -eq 'Hybrid' -and !$HostPolicy){throw 'Hybrid mode requires the shared HostPolicy file.'}
+if($NativeInputs -and $Mode -ne 'Hybrid'){throw 'Native input distribution requires Hybrid mode.'}
+if($NativeInputs -and !$NativeInputRoots.Count){throw 'Native inputs require explicit project and SDK input roots.'}
 if(!$PublishDirectory) { $PublishDirectory=(& (Join-Path $PSScriptRoot 'Build-Worker.ps1') -SelfContained).Directory }
 New-Item -ItemType Directory -Path $Destination | Out-Null
 Copy-Item -Path (Join-Path $PublishDirectory '*') -Destination $Destination -Recurse
@@ -31,6 +36,8 @@ if($Mode -eq 'Hybrid'){
 }
 $state=if([IO.Path]::IsPathRooted($StateDirectory)){[IO.Path]::GetFullPath($StateDirectory)}else{[IO.Path]::GetFullPath((Join-Path $Destination $StateDirectory))}
 $config=[ordered]@{realCompiler=$tools.Compiler;clientConfig=(Resolve-Path -LiteralPath $ClientConfig).Path;stateDirectory=$state;mode=$Mode;allowCompilerMismatch=$AllowCompilerMismatch.IsPresent}
+if($NativeInputs){$config.nativeInputs=$true;$config.nativeInputRoots=@($NativeInputRoots|ForEach-Object {[IO.Path]::GetFullPath($_)})}
+if($NativeInputs -and $NativeToolchainRoots.Count){$config.nativeToolchainRoots=@($NativeToolchainRoots|ForEach-Object {[IO.Path]::GetFullPath($_)})}
 if($HostPolicy){$config.hostPolicy=(Resolve-Path -LiteralPath $HostPolicy).Path}
 if($AdditionalClients.Count){
     if($Mode -ne 'Hybrid'){throw 'Multiple Workers require Hybrid mode'}
@@ -43,10 +50,17 @@ Copy-Item -LiteralPath (Join-Path $root 'msbuild\DbeInputInventory.cs') -Destina
 @{msbuild=$tools.MSBuild;compiler=$tools.Compiler}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Destination 'build-tools.json') -Encoding UTF8
 $compilerProps=[xml]'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><DBEConfiguredCompiler /></PropertyGroup></Project>'
 $compilerProps.Project.PropertyGroup.DBEConfiguredCompiler=$tools.Compiler
+if($NativeInputs){
+    $element=$compilerProps.CreateElement('DBENativeInputRoots',$compilerProps.DocumentElement.NamespaceURI)
+    $element.InnerText=($config.nativeInputRoots -join ';');[void]$compilerProps.Project.PropertyGroup.AppendChild($element)
+}
 foreach($entry in @{DBEStateDirectory=$state;DBELeaseDirectory=$(if($HostPolicy){Join-Path (Split-Path (Resolve-Path $HostPolicy).Path -Parent) 'leases'}else{Join-Path (Resolve-Path $Destination).Path 'unused-leases'})}.GetEnumerator()){
     $element=$compilerProps.CreateElement($entry.Key,$compilerProps.DocumentElement.NamespaceURI);$element.InnerText=$entry.Value;[void]$compilerProps.Project.PropertyGroup.AppendChild($element)
 }
 $runtimeDirs=@(@($ClientConfig)+$AdditionalClients|ForEach-Object {Split-Path (Resolve-Path -LiteralPath $_).Path -Parent})
+$runtimeInfo=& (Join-Path $Destination 'dbe-worker.exe') runtime-info | ConvertFrom-Json
+if($LASTEXITCODE -ne 0 -or ![IO.Path]::IsPathRooted($runtimeInfo.runtimeDirectory) -or !(Test-Path -LiteralPath $runtimeInfo.runtimeDirectory -PathType Container)){throw 'Adapter runtime location unavailable'}
+$runtimeDirs+=[IO.Path]::GetFullPath($runtimeInfo.runtimeDirectory)
 if($HostPolicy){$runtimeDirs+=Split-Path (Resolve-Path -LiteralPath $HostPolicy).Path -Parent}
 $element=$compilerProps.CreateElement('DBERuntimeDirectories',$compilerProps.DocumentElement.NamespaceURI);$element.InnerText=($runtimeDirs|Sort-Object -Unique)-join ';';[void]$compilerProps.Project.PropertyGroup.AppendChild($element)
 if($Mode -eq 'Hybrid'){$element=$compilerProps.CreateElement('DBEHybrid',$compilerProps.DocumentElement.NamespaceURI);$element.InnerText='true';$compilerProps.Project.PropertyGroup.AppendChild($element)|Out-Null}

@@ -6,7 +6,7 @@ $root=Split-Path $PSScriptRoot -Parent
 $tools=Get-DbeToolchain '2022' (Join-Path $root 'native/dbe-cl.vcxproj')
 $project=(Resolve-Path -LiteralPath $FixtureProject).Path
 # Only the generated profile fixture belongs to this test, never an external project.
-if($project -notmatch ('^'+[regex]::Escape((Join-Path $root 'out\compiler-profiles-'))+'[0-9a-f]{32}\\project\\remote-probe\.vcxproj$')){throw 'Expected the owned compiler-profiles fixture'}
+if($project -notmatch ('^'+[regex]::Escape((Join-Path $root 'out\compiler-profiles-'))+'[0-9a-f]{32}\\(?:inputs\\)?project\\remote-probe\.vcxproj$')){throw 'Expected the owned compiler-profiles fixture'}
 $config=Get-Content (Join-Path $AdapterDirectory 'msbuild.json') -Raw|ConvertFrom-Json
 $policy=Get-Content $config.hostPolicy -Raw|ConvertFrom-Json
 if($policy.localBatchSlots -lt 2){throw 'This test requires local MP grouping'}
@@ -23,7 +23,7 @@ try {
         [IO.File]::WriteAllText($file.FullName,$body.ToString())
     }
     $response=Join-Path $run 'build.rsp'
-    [IO.File]::WriteAllLines($response,@(('"'+$project+'"'),'/nologo','/nr:false','/m:1','/p:Configuration=Debug','/p:Platform=x64','/v:normal'),[Text.Encoding]::Unicode)
+    [IO.File]::WriteAllLines($response,@(('"'+$project+'"'),'/nologo','/nr:false','/m:1','/p:Configuration=Debug','/p:Platform=x64',('/p:DBEAdapterDirectory="'+(Resolve-Path $AdapterDirectory).Path+'"'),'/v:normal'),[Text.Encoding]::Unicode)
     $start=[Diagnostics.ProcessStartInfo]::new((Join-Path $root 'out/vsix-build/dbe-build-host.exe'))
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
     foreach($arg in @($tools.MSBuild,$response,('Local\DBE.Build.'+[Guid]::NewGuid().ToString('N')))){$start.ArgumentList.Add($arg)}

@@ -3,12 +3,14 @@ using System.Text;
 
 namespace Dbe;
 sealed class UnsupportedCompile(string reason) : Exception(reason);
-sealed record ClInvocation(string Source, string Object, string[] PreprocessOptions, string[] RemoteOptions, string[] LocalOptions, int CodePage, string? PchHeader, string? CompilerPdb)
+sealed record ClInvocation(string Source, string Object, string[] PreprocessOptions, string[] RemoteOptions, string[] LocalOptions, int CodePage, string? PchHeader, string? CompilerPdb,
+    string? PchFile = null, string? SourceArgument = null, bool PchProducer = false)
 {
-    internal static ClInvocation[] ParseBatch(string[] args)
+    internal static ClInvocation[] ParseBatch(string[] args, bool allowProducer = false)
     {
         var all = Expand(args);
-        List<(int Index, string Path)> sources = []; string? output = null;
+        List<(int Index, string Path, string Argument)> sources = []; string? output = null, pchFile = null;
+        bool pchProducer = false;
         List<string> preprocess = [], remote = [];
         bool compile = false;
         int codePage = (int)GetACP(); string? pchHeader = null;
@@ -24,11 +26,13 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
             if (arg.StartsWith("/MP", StringComparison.Ordinal) && (arg.Length == 3 || int.TryParse(arg[3..], out int n) && n > 0)) continue;
             if (arg == "/Y-") { pchHeader = null; continue; }
             if (arg.StartsWith("/Yu", StringComparison.Ordinal)) { pchHeader = Value("/Yu"); continue; }
+            if (allowProducer && arg.StartsWith("/Yc", StringComparison.Ordinal)) { pchHeader = Value("/Yc"); pchProducer = true; continue; }
             if (arg is "/nologo" or "/TP" or "/Gm-" or "/errorReport:prompt" or "/errorReport:none" or "/errorReport:queue") continue;
             if (arg == "/external:anglebrackets" || arg.StartsWith("/external:env:", StringComparison.Ordinal)) { preprocess.Add(arg); continue; }
             if (arg.StartsWith("/external:I", StringComparison.Ordinal)) { preprocess.Add("/external:I" + Value("/external:I")); continue; }
             if (arg.StartsWith("/Fo", StringComparison.Ordinal)) { output = Value("/Fo"); continue; }
-            if (arg.StartsWith("/Fd", StringComparison.Ordinal) || arg.StartsWith("/Fp", StringComparison.Ordinal)) { _ = Value(arg[..3]); continue; }
+            if (arg.StartsWith("/Fp", StringComparison.Ordinal)) { pchFile = Path.GetFullPath(Value("/Fp")); continue; }
+            if (arg.StartsWith("/Fd", StringComparison.Ordinal)) { _ = Value("/Fd"); continue; }
             string? inputOption = new[] { "/FI", "/I", "/D", "/U" }.FirstOrDefault(p => arg.StartsWith(p, StringComparison.Ordinal));
             if (inputOption is not null) { preprocess.Add(inputOption + Value(inputOption)); continue; }
             if (arg is "/X" or "/showIncludes") { preprocess.Add(arg); continue; }
@@ -38,7 +42,7 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
             if (CompileOptions.Supports(arg)) { preprocess.Add(arg); remote.Add(arg); continue; }
             if (!arg.StartsWith('/') && !arg.StartsWith('-') && new[] { ".cpp", ".cc", ".cxx" }.Contains(Path.GetExtension(arg), StringComparer.OrdinalIgnoreCase))
             {
-                sources.Add((i, Path.GetFullPath(arg))); continue;
+                sources.Add((i, Path.GetFullPath(arg), arg)); continue;
             }
             throw new UnsupportedCompile("Unsupported compiler argument: " + arg);
         }
@@ -58,7 +62,7 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
             if (directory) destination = Path.Combine(destination, Path.GetFileNameWithoutExtension(source.Path) + ".obj");
             destination = Path.GetFullPath(destination);
             if (!Path.GetExtension(destination).Equals(".obj", StringComparison.OrdinalIgnoreCase)) throw new UnsupportedCompile("Expected an object output");
-            batch.Add(new(source.Path, destination, preprocess.ToArray(), remote.ToArray(), [..common, source.Path], codePage, pchHeader, PdbIdentity(all)));
+            batch.Add(new(source.Path, destination, preprocess.ToArray(), remote.ToArray(), [..common, source.Argument], codePage, pchHeader, PdbIdentity(all), pchFile, source.Argument, pchProducer));
         }
         if (batch.Select(x => x.Object).Distinct(StringComparer.OrdinalIgnoreCase).Count() != batch.Count) throw new UnsupportedCompile("Object filename collision");
         return batch.ToArray();

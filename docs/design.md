@@ -4,9 +4,9 @@ VSIX → 원래 MSBuild CL Task/추적 → Adapter → local MSVC 또는 TLS Wor
 
 - 프로세스: Job Object를 creation 시점에 할당하고 소유 handle을 유지한다. PID/경로만으로 종료 대상을 결정하지 않는다.
 - Local 전용: native wrapper로 원래 MSVC PCH/MP를 보존한다. 자신의 빌드에는 Worker용 고정 제한을 적용하지 않는다. 수신 요청의 보호 정책과 구분한다.
-- 파일: 준비된 TU와 명시 입력을 TLS로 보내고 object/PDB를 검증 후 원자적으로 반영한다. 공유 CAS가 아니다.
+- 파일: 기본 경로는 준비된 TU와 명시 입력을 TLS로 보내고 object/PDB를 검증 후 원자적으로 반영한다. v6 선택 경로는 허용 범위의 원본 입력, Worker별 hash·mtime blob 캐시와 재사용 입력 트리를 사용한다. 소비자 object를 저장하는 빌드 결과 캐시는 아니다.
 - Local staging: object별 hash/attempt 중첩과 compiler 출력 폴더를 분리한다. 짧은 Job 전용 폴더를 사용하고, 확인된 프로세스 정리 후에만 지운다. 최종 목적지 볼륨에서 rename하여 publication한다.
-- PCH: 생성은 local, 원격 사용자는 `/P /Y-`로 펼친다. 원격 PCH reuse는 없다. 같은 local PDB는 하나의 MP Job 안에서 사용한다.
+- PCH: 기본 Hybrid는 생성이 local이고 원격 사용자는 `/P /Y-`로 펼친다. 선택적인 [v6 원본 입력 경로](native-pch.md)는 원래 `/Yc`·`/Yu`를 실행하고 입력·생성 옵션·로컬 생성 세대가 같은 Worker PCH를 재사용한다. 기준 PDB를 고정하고 소비자별 사본을 사용한다. 같은 local PDB는 하나의 MP Job 안에서 사용한다.
 - 추적: native MSBuild 추적을 보존하고 include membership 변화를 추가로 확인한다. runtime 파일은 실제 parent directory 기준으로 제외한다.
 - 예산: Worker별 준비 티켓과 실제 요청 제한을 분리한다. fallback은 local PDB 대기 전에 원격 lease를 놓는다. 동일 scheduler에서 required-local waiter가 새 MP group에 밀리지 않게 한다.
 - 보호: 수신 PC 사용자가 우선이다. 현재 fixed slots는 개인용/전용 정책, 활동 감지, 양방향 capacity 광고, 머신 전체 budget, 여러 요청자 공정성을 완성하지 못했다.

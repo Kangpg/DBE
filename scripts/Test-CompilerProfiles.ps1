@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$PublishDirectory,[string]$RemoteClientConfig,[string]$HybridPolicy,[string[]]$AdditionalClients=@(),[switch]$LongOutputNames)
+param([Parameter(Mandatory)][string]$PublishDirectory,[string]$RemoteClientConfig,[string]$HybridPolicy,[string[]]$AdditionalClients=@(),[switch]$LongOutputNames,[switch]$NativeInputs)
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'Toolchain.ps1')
@@ -26,8 +26,12 @@ try {
     if(!$ready){throw 'Worker did not become ready'}
     $mode=if($HybridPolicy){'Hybrid'}else{'Distributed'}
     $state=Join-Path $root ('out\s-'+[Guid]::NewGuid().ToString('N'))
-    $adapter=& (Join-Path $PSScriptRoot 'New-MSBuildAdapter.ps1') -Destination (Join-Path $run 'adapter') -ClientConfig $clientConfig -PublishDirectory $publish -Mode $mode -HostPolicy $HybridPolicy -AdditionalClients $AdditionalClients -StateDirectory $state
-    $projectRoot=Join-Path $run 'project';New-Item -ItemType Directory -Path $projectRoot|Out-Null
+    $inputScope=Join-Path $run 'inputs';New-Item -ItemType Directory -Path $inputScope|Out-Null
+    $projectRoot=Join-Path $inputScope 'project';New-Item -ItemType Directory -Path $projectRoot|Out-Null
+    $nativeRoots=@($inputScope)
+    $toolchainRoots=@(([IO.Path]::GetFullPath((Join-Path (Split-Path $tools.Compiler -Parent) '../../..'))),(Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits'))
+    $toolchainRoots+=Join-Path ([IO.Path]::GetFullPath((Join-Path (Split-Path $tools.Compiler -Parent) '../../../../../..'))) 'Auxiliary/VS'
+    $adapter=& (Join-Path $PSScriptRoot 'New-MSBuildAdapter.ps1') -Destination (Join-Path $run 'adapter') -ClientConfig $clientConfig -PublishDirectory $publish -Mode $mode -HostPolicy $HybridPolicy -AdditionalClients $AdditionalClients -StateDirectory $state -NativeInputs:$NativeInputs -NativeInputRoots $nativeRoots -NativeToolchainRoots $toolchainRoots
     Copy-Item -Path (Join-Path $root 'fixture-remote\*') -Destination $projectRoot -Recurse
     $settings=[xml]'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><DBEEnabled>true</DBEEnabled><DBEAdapterDirectory /></PropertyGroup></Project>'
     $settings.Project.PropertyGroup.DBEAdapterDirectory=$adapter.AdapterDirectory;$settings.Save((Join-Path $projectRoot 'DBE.settings.props'))
@@ -41,6 +45,11 @@ try {
     foreach($name in @('stdafx.cpp','cp949.cpp','utf16.cpp')){$n=$xml.CreateElement('ClCompile',$xml.DocumentElement.NamespaceURI);$n.SetAttribute('Include',$name);if($name -eq 'stdafx.cpp'){$pch=$xml.CreateElement('PrecompiledHeader',$xml.DocumentElement.NamespaceURI);$pch.InnerText='Create';$n.AppendChild($pch)|Out-Null};$group.AppendChild($n)|Out-Null};$xml.Save($project)
     [Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance)
     [IO.File]::WriteAllText((Join-Path $projectRoot 'stdafx.h'),"#pragma once`n#include <vector>`n#include <external-warning.h>`n")
+    if($NativeInputs){
+        $sibling=Join-Path $inputScope 'sibling';New-Item -ItemType Directory -Path $sibling|Out-Null
+        [IO.File]::WriteAllText((Join-Path $sibling 'preserved.h'),"#pragma once`n#define SIBLING_INPUT_VALUE 42`n")
+        [IO.File]::AppendAllText((Join-Path $projectRoot 'stdafx.h'),"#include `"../sibling/preserved.h`"`nstatic_assert(SIBLING_INPUT_VALUE==42);`n")
+    }
     [IO.File]::WriteAllText((Join-Path $projectRoot 'headers\external-warning.h'),"#pragma once`ninline int external_warning(double x) { return x; }`n")
     [IO.File]::WriteAllText((Join-Path $projectRoot 'stdafx.cpp'),"#include `"stdafx.h`"`n")
     [IO.File]::WriteAllText((Join-Path $projectRoot 'cp949.cpp'),"#include `"stdafx.h`"`nint cp949_value(){return L`"한글`"[0];}`n",[Text.Encoding]::GetEncoding(949))
@@ -71,12 +80,20 @@ try {
     }
     function Build([string]$Name,[string]$Configuration='Debug',[bool]$Failure=$false){
         $log=Join-Path $run ($Name+'.log')
-        & $tools.MSBuild $project /nologo /nr:false /m:1 /p:Platform=x64 "/p:Configuration=$Configuration" /v:normal *> $log
+        & $tools.MSBuild $project /nologo /nr:false /m:1 /p:Platform=x64 /p:VcpkgEnabled=false "/p:Configuration=$Configuration" /v:normal *> $log
         if(($LASTEXITCODE -ne 0) -ne $Failure){Get-Content $log -Tail 25;throw "Unexpected result: $log"};return $log
     }
     $full=Build '01-debug'
-    $remoteCount=@(Select-String -LiteralPath $full -SimpleMatch 'DBE: remote ').Count
+    $remoteCount=@(Select-String -LiteralPath $full -Pattern 'DBE: (native-remote|remote) ').Count
     if((!$HybridPolicy -and $remoteCount -ne 4) -or $remoteCount -eq 0 -or !(Select-String -LiteralPath $full -SimpleMatch 'required PCH producer' -Quiet)){throw 'PCH/remote routing missing'}
+    if($NativeInputs){
+        $checks.Add('native-PCH-preserves-parent-relative-sibling-header')
+        $receipts=@(Get-ChildItem $state -Recurse -Filter result.json | ForEach-Object {Get-Content $_.FullName -Raw|ConvertFrom-Json} | Where-Object {$_.PSObject.Properties.Name -contains 'version'})
+        $completed=@($receipts|Where-Object {$_.result.status -eq 'completed'})
+        if(!$completed.Count -or @($receipts|Where-Object {$_.version -ne 6}).Count -or @($completed|Where-Object {!$_.result.cache -or !$_.result.producerPdb}).Count){throw 'Native reusable-PCH receipts missing'}
+        if($completed.Count -gt 1 -and !@($completed|Where-Object {$_.result.cache.pchHit -and $_.result.cache.inputsHit}).Count){throw 'Repeated MSBuild consumers did not reuse native inputs/PCH'}
+        $checks.Add('MSBuild-v6-native-input-and-PCH-reuse-receipts')
+    }
     if($HybridPolicy -and !(Select-String -LiteralPath $full -Pattern 'DBE: local(-batch)?-running ' -Quiet)){throw 'Planned local compilation missing'}
     if($HybridPolicy -and $policy.PSObject.Properties.Name -contains 'localBatchSlots' -and $policy.localBatchSlots -gt 1){
         if(!(Select-String -Path $full -SimpleMatch 'DBE: local-batch-running ' -Quiet)){throw 'Local MP group did not execute'}
@@ -96,7 +113,7 @@ try {
     if($LASTEXITCODE -ne 0 -or !($symbols -match '__CheckForDebuggerJustMyCode')){throw 'Remote object lost /JMC instrumentation'}
     $checks.Add('PCH-Zi-MP-external-warnings-mixed-encoding-Debug-link-run')
     $checks.Add('JMC-helper-preserved-in-remote-object')
-    if($HybridPolicy){
+    if($HybridPolicy -and !$NativeInputs){
         $configFile=Join-Path $adapter.AdapterDirectory 'msbuild.json';$configuration=Get-Content -Raw $configFile|ConvertFrom-Json
         $savedClients=@(if($configuration.PSObject.Properties.Name -contains 'additionalClients'){$configuration.additionalClients})
         try {
@@ -112,7 +129,7 @@ try {
     $noop=Build '02-noop'
     if(!$HybridPolicy){if((Get-Item (Join-Path $projectRoot 'out\Debug\obj\value.obj')).LastWriteTimeUtc.Ticks -ne $stamp){throw 'No-op replaced object'};$checks.Add('PDB-aware-object-reuse')}
     else {
-        if(Select-String -LiteralPath $noop -Pattern 'DBE: (local(-batch)?-running|remote-requested|preparing|fallback-running)' -Quiet){throw 'No-op Hybrid build started compilation'}
+        if(Select-String -LiteralPath $noop -Pattern 'DBE: (local(-batch)?-running|remote-requested|native-requested|preparing|fallback-running)' -Quiet){throw 'No-op Hybrid build started compilation'}
         if((Get-Item (Join-Path $projectRoot 'out\Debug\obj\value.obj')).LastWriteTimeUtc.Ticks -ne $stamp){throw 'Hybrid no-op replaced object'}
         & (Join-Path $projectRoot 'out\Debug\bin\remote-probe.exe');if($LASTEXITCODE -ne 42){throw 'Hybrid repeated build changed runtime result'};$checks.Add('hybrid-no-op-skips-compile-and-preserves-object')
     }
