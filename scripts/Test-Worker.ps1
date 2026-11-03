@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$PublishDirectory,[string]$Compiler)
+param([string]$PublishDirectory,[string]$Compiler,[string]$OutputRoot)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = Split-Path $PSScriptRoot -Parent
@@ -13,7 +13,9 @@ New-Item -ItemType Directory -Path $build -Force | Out-Null
 $log = Join-Path $build 'child-build.log'
 & $tools.MSBuild $project /nologo /nr:false /m:1 /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:PreferredToolArchitecture=x64 "/p:DBESource=$root\tests\worker-child.cpp" /p:TargetName=worker-child "/p:OutDir=$build\" "/p:IntDir=$build\obj\" /v:normal *> $log
 if ($LASTEXITCODE -ne 0) { throw "Worker child fixture failed to build: $log" }
-$run = Join-Path $root ('out\worker-test-' + [Guid]::NewGuid().ToString('N'))
+$artifacts=if($OutputRoot){[IO.Path]::GetFullPath($OutputRoot)}else{Join-Path $root 'out'}
+New-Item -ItemType Directory $artifacts -Force|Out-Null
+$run = Join-Path $artifacts ('worker-test-' + [Guid]::NewGuid().ToString('N'))
 $testLog = $run + '.log'
 & (Join-Path $PublishDirectory 'dbe-worker.exe') self-test $Compiler (Join-Path $build 'worker-child.exe') $run *> $testLog
 if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $testLog -Tail 20; throw "Worker tests failed: $testLog" }

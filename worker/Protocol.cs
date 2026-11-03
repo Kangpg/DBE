@@ -41,6 +41,10 @@ static partial class Wire
     // v3 admits one prepared translation unit, streamed
     // within 128 MiB; legacy multi-file budgets remain unchanged.
     internal const int PreparedLimit = 128 * 1024 * 1024, PreparedObjectLimit = 128 * 1024 * 1024, PdbLimit = 64 * 1024 * 1024;
+    // One cold native context can receive inputs, run Yc, then run Yu. The
+    // transport budget must accommodate both independently bounded compilers.
+    internal static int NativeRequestSeconds(int compilerSeconds) => compilerSeconds is >= 1 and <= 120
+        ? 180 + 2 * compilerSeconds : throw new Rejected("Invalid native compiler time budget");
     internal static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

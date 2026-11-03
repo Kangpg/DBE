@@ -186,18 +186,11 @@ static class SelfTest
         var request = new Request(5, "compile", Guid.NewGuid().ToString("N"), identity, "Q/project/main.cpp", files, options,
             NativeInput: new MappedCompile("Q:\\project\\", "Q:\\project\\main.cpp", "C:\\dbe-native-fixture\\", recipe));
         string local = Directory.CreateDirectory(Path.Combine(directory, "local-native-producer")).FullName;
-        string localTemporary = Directory.CreateDirectory(Path.Combine(local, "tmp")).FullName;
         using var runtime = new RuntimeInputs(compiler, Path.Combine(directory, "local-runtime"));
         runtime.Populate(Path.Combine(directory, "mapped-input"));
         Directory.CreateDirectory(Path.Combine(input, "out"));
-        var localProducer = Native.Run("Z:\\cl.exe", input, string.Join(' ', options.Concat(new[] {
-            "/nologo", "/c", "/Ycpch.h", "/FpQ:\\project\\shared.pch",
-            "/Fd" + MappedCompile.PhysicalPath(Path.Combine(local, "local.pdb")),
-            "/FoQ:\\project\\out\\pch.obj", "Q:\\project\\pch.cpp"
-        }).Select(ClInvocation.Quote)), 10, 2048, token,
-            tempDirectory: localTemporary,
-            mapping: "Q=" + Path.GetDirectoryName(input)! + "\nC=" + Path.GetDirectoryName(sdk)! + "\nZ=" + Path.GetDirectoryName(compiler)!,
-            logicalCwd: "Q:\\project", include: "C:\\dbe-native-fixture");
+        var mapped = new MappedCompiler(compiler, Path.Combine(directory, "mapped-input"), request.NativeInput!);
+        var localProducer = mapped.Produce(recipe, local, Path.Combine(local, "local.pdb"), 10, 2048, token);
         Check(localProducer.Kind == 0 && localProducer.ExitCode == 0, "mapped-native-local-PCH-producer:" + JsonSerializer.Serialize(localProducer) + Encoding.UTF8.GetString(localProducer.Stdout) + Encoding.UTF8.GetString(localProducer.Stderr));
         File.Copy(Path.Combine(input, "out", "pch.obj"), Path.Combine(local, "producer.obj"));
         int deferredIndex = Array.FindIndex(files, file => file.Path.EndsWith("/sdk.h", StringComparison.Ordinal));

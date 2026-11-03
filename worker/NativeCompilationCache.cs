@@ -9,7 +9,9 @@ sealed record CachedCompilation(Execution Result, string? ProducerPdb, NativeCac
 sealed class NativeCompilationCache(string root, NativeInputCache inputs, RuntimeInputs runtime, Compiler compiler) : IDisposable
 {
     private const int ContextLimit = 4;
-    private const long ByteLimit = 4L * 1024 * 1024 * 1024, PchLimit = 512L * 1024 * 1024;
+    // Disk artifact capacity is independent of the receiving compiler's
+    // unchanged Job memory, timeout and slot limits.
+    private const long ByteLimit = 4L * 1024 * 1024 * 1024, PchLimit = 1536L * 1024 * 1024;
     private readonly SemaphoreSlim admission = new(1);
     private readonly Dictionary<string, Entry> entries = new(StringComparer.Ordinal);
     private static readonly List<NativeCompilationCache> retained = [];
@@ -24,6 +26,7 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
         internal readonly SemaphoreSlim Initialization = new(1);
         internal readonly List<FileStream> Pins = [];
         internal bool InputsReady, PchReady, Retain, Invalid;
+        internal string? Failure;
         internal MappedCompiler? Compiler;
         internal string? SeedName;
         internal long Bytes, LastUse;
@@ -94,7 +97,7 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
             await entry.Initialization.WaitAsync(token); waitMs = watch.Elapsed.TotalMilliseconds;
             try
             {
-                if (entry.Invalid || entry.Retain) throw new Rejected("Native context is not reusable");
+                if (entry.Invalid || entry.Retain) throw new Rejected(entry.Failure ?? "Native context is not reusable");
                 inputsHit = entry.InputsReady;
                 if (!entry.InputsReady)
                 {
@@ -123,10 +126,14 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
                         if (produced.Kind != 0 || produced.ExitCode != 0) return Result(produced);
                         producerLog = produced;
                         entry.Bytes = Directory.EnumerateFiles(entry.Root, "*", SearchOption.AllDirectories).Sum(path => new FileInfo(path).Length);
-                        if (entry.Bytes > 2L * 1024 * 1024 * 1024) { entry.Invalid = true; throw new Rejected("Native context exceeds its byte budget"); }
-                        var artifacts = new List<(string Path, long Limit)> {
-                            (entry.Compiler.Resolve(recipe.PchFile), PchLimit), (entry.Compiler.Resolve(recipe.ObjectFile!), Wire.OutputLimit) };
-                        if (seed is not null) artifacts.Add((seed, Wire.PdbLimit));
+                        if (entry.Bytes > 2L * 1024 * 1024 * 1024) {
+                            entry.Invalid = true; entry.Failure = "Native context exceeds its byte budget";
+                            throw new Rejected(entry.Failure);
+                        }
+                        var artifacts = new List<(string Path, long Limit, string Kind)> {
+                            (entry.Compiler.Resolve(recipe.PchFile), PchLimit, "PCH"),
+                            (entry.Compiler.Resolve(recipe.ObjectFile!), Wire.OutputLimit, "producer object") };
+                        if (seed is not null) artifacts.Add((seed, Wire.PdbLimit, "producer PDB"));
                         Pin(entry, artifacts);
                         entry.PchReady = true;
                     }
@@ -155,7 +162,7 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
             entry.LastUse = Stopwatch.GetTimestamp(); Interlocked.Decrement(ref entry.Users);
         }
     }
-    private static void Pin(Entry entry, IEnumerable<(string Path, long Limit)> artifacts)
+    private static void Pin(Entry entry, IEnumerable<(string Path, long Limit, string Kind)> artifacts)
     {
         List<FileStream> acquired = [];
         try
@@ -164,7 +171,11 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
             {
                 Wire.NoReparse(artifact.Path);
                 var file = new FileStream(artifact.Path, FileMode.Open, FileAccess.Read, FileShare.Read); acquired.Add(file);
-                if (file.Length is <= 0 || file.Length > artifact.Limit) throw new Rejected("Cached PCH artifact exceeds budget");
+                if (file.Length is <= 0 || file.Length > artifact.Limit) {
+                    entry.Invalid = true;
+                    entry.Failure = $"Cached {artifact.Kind} size={file.Length} exceeds limit={artifact.Limit}";
+                    throw new Rejected(entry.Failure);
+                }
             }
             entry.Pins.AddRange(acquired); acquired.Clear();
         }

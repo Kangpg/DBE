@@ -46,7 +46,7 @@ static partial class MsBuildAdapter
             {
                 deadline.CancelAfter(Timeout.InfiniteTimeSpan);
                 using var request = await scheduler.AcquireRemoteRequest(invocation.Source, token, placement.ClientPath);
-                deadline.CancelAfter(TimeSpan.FromSeconds(180));
+                deadline.CancelAfter(TimeSpan.FromSeconds(Wire.NativeRequestSeconds(remote.TimeoutSeconds)));
                 Event(owned.Root, "native-requested", invocation, remote.Machine);
                 using var timing = BuildTiming.Measure("native.rpc");
                 reply = await client.Compile(manifest, "", output, deadline.Token, nativePaths: true, cache: inputs.ClientCache);

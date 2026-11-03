@@ -158,6 +158,28 @@ static class NativeReuseSelfTest
             Request missing = Manifest("alpha.cpp", Guid.NewGuid().ToString("N")); symbols.Remember(cc.WorkerPin, missing.ContextKey!);
             var missed = await Submit(missing, "missing-context", symbols);
             Check(missed.Reply.Status == "completed" && !missed.Reply.Cache!.PchHit, "missing-context-resends-validated-definition");
+            string producerSource = Path.Combine(source, "pch.cpp");
+            string originalProducerText = File.ReadAllText(producerSource);
+            DateTime producerTime = File.GetLastWriteTimeUtc(producerSource);
+            long beforeLimit = missed.Reply.Cache!.PchBuilds;
+            try
+            {
+                File.WriteAllText(producerSource, "#include \"pch.h\"\nchar dbe_oversized_producer[" + (Wire.OutputLimit + 1) + "]={1};\n");
+                Request oversized = Manifest("alpha.cpp");
+                var limited = await Submit(oversized, "producer-size-limit", symbols);
+                Check(limited.Reply.Status == "rejected" && limited.Reply.Message!.Contains("producer object") &&
+                    limited.Reply.Output is null && !File.Exists(Path.Combine(limited.Output, "result.obj")), "producer-artifact-limit-rejects-without-publication");
+                var repeated = await Submit(oversized, "producer-size-limit-repeated", symbols);
+                Check(repeated.Reply.Status == "rejected" && repeated.Reply.Message == limited.Reply.Message,
+                    "repeated-context-preserves-artifact-limit-reason");
+            }
+            finally
+            {
+                File.WriteAllText(producerSource, originalProducerText); File.SetLastWriteTimeUtc(producerSource, producerTime);
+            }
+            var afterLimit = await Submit(Manifest("alpha.cpp", missing.NativeInput!.Producer!.Generation), "after-size-limit", symbols);
+            Check(afterLimit.Reply.Status == "completed" && afterLimit.Reply.Cache!.PchHit && afterLimit.Reply.Cache.PchBuilds == beforeLimit + 1,
+                "artifact-policy-failure-builds-once-and-preserves-valid-contexts");
         }
         finally { if (worker is not null) { worker.Stop(); await server; worker.Dispose(); } }
         if (contexts is not null)

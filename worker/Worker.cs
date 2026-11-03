@@ -125,6 +125,7 @@ sealed class Worker : IDisposable
                 }
                 if (Volatile.Read(ref poisoned) != 0) throw new Rejected("Worker cleanup failed; restart after inspection");
                 if (request.Toolchain != compiler.Identity) throw new Rejected("Toolchain mismatch");
+                if (request.Version == 6) lifetime.CancelAfter(TimeSpan.FromSeconds(Wire.NativeRequestSeconds(config.TimeoutSeconds)));
                 acquired = slots.Wait(0);
                 if (!acquired) { await Wire.Write(tls, new Reply("busy", attempt), lifetime.Token); return; }
                 // Server-generated workspace identity: replayed attempts never share a directory or outputs.

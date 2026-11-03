@@ -10,12 +10,16 @@ Worker는 입력 트리를 한 번 구성하고 입력과 완료된 PCH·produce
 
 후속 요청은 파일 목록 전체 대신 검증된 컨텍스트 key와 소비자 명령을 보낸다. Worker 재시작이나 축출로 key를 찾지 못하면 전체 정의로 한 번 재협상한다. 필요한 deferred 입력은 새 정의로 추가한다. 반복 요청의 원본 정의는 상태 폴더에 공통 증거로 한 번 저장하고 개별 영수증에서 참조한다. 공통 증거 한도는 64개·1 GiB이며 한도 초과 시 영수증에 미보존 상태를 명시한다.
 
-재사용 컨텍스트는 최대 4개·논리 크기 4 GiB로 제한하고 활성 사용자가 없는 오래된 컨텍스트를 축출한다. 컨텍스트 하나는 2 GiB, PCH 512 MiB, 기준 PDB 64 MiB 한도다. 기존 원본 blob 캐시는 별도 2 GiB 한도다. 프로세스 정리가 불확실하면 컨텍스트와 소유권을 보존하고 Worker를 unhealthy로 전환한다. 정상 종료 때 컨텍스트를 삭제하며, 재시작 시 남은 컨텍스트를 임의로 재사용하거나 삭제하지 않는다. Worker의 실행 슬롯·메모리·시간 한도는 늘리지 않았다.
+재사용 컨텍스트는 최대 4개·논리 크기 4 GiB로 제한하고 활성 사용자가 없는 오래된 컨텍스트를 축출한다. 컨텍스트 하나는 2 GiB, PCH 1.5 GiB, 기준 PDB 64 MiB 한도다. 기존 원본 blob 캐시는 별도 2 GiB 한도다. 프로세스 정리가 불확실하면 컨텍스트와 소유권을 보존하고 Worker를 unhealthy로 전환한다. 정상 종료 때 컨텍스트를 삭제하며, 재시작 시 남은 컨텍스트를 임의로 재사용하거나 삭제하지 않는다. Worker의 실행 슬롯·메모리·각 MSVC 시간 한도는 늘리지 않았다.
+
+0.2.1에서 큰 PCH의 디스크 한도를 조정했다. 크기 정책에 맞지 않는 컨텍스트는 실패 이유를 보존하고 동일 생성의 반복 실행을 생략한다. 일반 compiler 오류나 취소를 영구 정책 실패로 저장하지 않는다. v6 RPC 전체 예산은 입력 준비 180초와 두 MSVC 시간 예산의 합으로 계산하며, compiler 제한 120초일 때 420초다. 각 compiler는 계속 개별 제한을 받는다. 최초 입력 전송만으로 기존 RPC 180초가 소모되는 사례를 재현하고 수정 경로에서 실제 큰 PCH 생성·재사용을 확인했다.
 
 실제 MSVC·TLS 합성 검증에서 병렬 소비자, warm 입력/PCH hit, 입력·기준 PDB 재전송 없음, 작은 참조 헤더, 잘못된 참조 거부, 헤더·옵션·생성 세대 무효화, 오류·취소 후 복구를 확인했다. 서로 다른 사용자 타입을 가진 두 소비자를 원래 로컬 producer 및 원격 producer 각각과 링크·실행하고 DIA로 최종 PDB의 타입·멤버를 확인한다. 루프백 검증에서는 Worker 종료와 캐시 삭제 후 링크하므로 Worker에 남은 기준 PDB에 우연히 의존하는 성공을 배제한다. 물리 Worker 두 대에서도 동일 compiler identity로 각각 30개 검증을 통과했다. 현재 프로젝트 전체 처리량 검증은 별도 단계다. `/GL`+PCH 등 v5의 미지원 프로필은 원래 로컬 경로를 유지한다.
 
 ```powershell
 .\scripts\Test-NativeReuse.ps1 -PublishDirectory <runtime-directory>
+# 여유 있는 검증 볼륨 선택
+.\scripts\Test-NativeReuse.ps1 -PublishDirectory <runtime-directory> -OutputRoot <verification-root>
 # 동일 compiler의 페어링된 물리 Worker 검증
 .\scripts\Test-NativeReuse.ps1 -PublishDirectory <runtime-directory> -Compiler <cl.exe> -RemoteClientConfig <client.json>
 ```
@@ -23,6 +27,8 @@ Worker는 입력 트리를 한 번 구성하고 입력과 완료된 PCH·produce
 Client와 Worker 모두 v6 런타임이 필요하다. 기존 VS 연결은 자동 전환하지 않는다. 소스·PCH·compiler 옵션 보존과 실제 원격 완료·최종 링크를 확인한 다음 전환한다.
 
 현재 프로젝트 검증에서는 로컬 40개·원격 19개 완료와 cache hit를 확인했지만 다른 빌드가 시작돼 소유한 검증만 중단했다. 원본 입력은 바뀌지 않았다. 최종 링크·전체 성공·무변경 빌드와 실제 처리량은 아직 미검증이다. [검증 보고서](benchmark.md)를 따른다.
+
+재개한 실행에서는 약 1GiB PCH들이 512MiB 정책에 걸려 로컬로 전환되는 원인을 확인하고 소유한 검증을 중단했다. 실제 큰 PCH 두 사례는 수정 후 별도의 MSVC·TLS 콜드/웜 검증을 통과했다. 전체 최종 링크 성공으로 해석하지 않는다. Worker 업데이트 때는 Ctrl+C로 정상 종료하고 캐시 정리가 끝날 때까지 기다린 뒤 파일을 교체한다.
 
 ## v5: 원래 경로를 사용하는 Hybrid 실험
 
