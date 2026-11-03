@@ -9,6 +9,28 @@ $projectRoot=Join-Path $run 'project';New-Item -ItemType Directory $projectRoot|
 $settings=[xml]'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><DBEEnabled>true</DBEEnabled><DBEAdapterDirectory /></PropertyGroup></Project>'
 $settings.Project.PropertyGroup.DBEAdapterDirectory=$AdapterDirectory;$settings.Save((Join-Path $projectRoot 'DBE.settings.props'))
 $project=Join-Path $projectRoot 'remote-probe.vcxproj';$checks=[Collections.Generic.List[string]]::new()
+# A referenced header scope is outside the project and /I roots. It must be
+# present before initial CL tracking, including a previously absent include.
+$reference=Join-Path $run 'referenced';New-Item -ItemType Directory $reference|Out-Null
+$referenceProject=Join-Path $reference 'headers.vcxproj'
+[IO.File]::WriteAllText($referenceProject,@'
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations"><ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration></ItemGroup>
+  <PropertyGroup Label="Globals"><ProjectGuid>{61973446-AC14-44DE-BCFD-53F60C7C0BF8}</ProjectGuid></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Utility</ConfigurationType><PlatformToolset>v143</PlatformToolset></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
+'@)
+[IO.File]::WriteAllText((Join-Path $reference 'shared.h'),"#pragma once`n#if __has_include(`"reference-extra.h`")`n#include `"reference-extra.h`"`n#else`n#define DBE_REFERENCE_DELTA 0`n#endif`n")
+[IO.File]::WriteAllText((Join-Path $projectRoot 'headers/value.h'),"#pragma once`n#include `"../../referenced/shared.h`"`n#define DBE_VALUE (40 + DBE_REFERENCE_DELTA)`n")
+$definition=[xml][IO.File]::ReadAllText($project);$ns=$definition.DocumentElement.NamespaceURI
+$group=$definition.CreateElement('ItemGroup',$ns);$item=$definition.CreateElement('ProjectReference',$ns);$item.SetAttribute('Include','..\referenced\headers.vcxproj')
+foreach($entry in @{Project='{61973446-AC14-44DE-BCFD-53F60C7C0BF8}';ReferenceOutputAssembly='false';LinkLibraryDependencies='false'}.GetEnumerator()){
+    $metadata=$definition.CreateElement($entry.Key,$ns);$metadata.InnerText=$entry.Value;[void]$item.AppendChild($metadata)
+}
+[void]$group.AppendChild($item);[void]$definition.DocumentElement.AppendChild($group);$definition.Save($project)
 function Build([string]$Name,[int]$Expected,[bool]$NoCompile=$false,[bool]$Failure=$false,[string]$Target='Build'){
     # Native Local emits no DBE execution events. Check output timestamps too,
     # so a silent recompilation cannot pass the no-op contract.
@@ -26,6 +48,12 @@ function Build([string]$Name,[int]$Expected,[bool]$NoCompile=$false,[bool]$Failu
 }
 Build initial 42
 Build noop 42 $true
+[IO.File]::WriteAllText((Join-Path $reference 'reference-extra.h'),"#pragma once`n#define DBE_REFERENCE_DELTA 5`n")
+Build added-reference-sibling-include 47
+Build noop-after-reference-add 47 $true
+Remove-Item -LiteralPath (Join-Path $reference 'reference-extra.h')
+Build removed-reference-sibling-include 42
+Build noop-after-reference-remove 42 $true
 [IO.File]::WriteAllText((Join-Path $projectRoot 'headers\optional.h'),"#pragma once`n#define DBE_OPTIONAL 7`n")
 Build added-previously-absent-include 49
 Remove-Item -LiteralPath (Join-Path $projectRoot 'headers\optional.h')

@@ -52,6 +52,12 @@ Alternate native/Local order across fresh-output pairs and measure warm no-op se
 
 Detect other active builds before and during measurement, not just at session start. Stop only the measurement's captured owner/Job when overlap invalidates a run. Solution and direct-project entry points can resolve different references: keep both compared modes on the same verified entry point, state its scope, and never combine a failed fresh build with a later link-only diagnostic into a success time.
 
+Process names alone do not establish build interference. Retain command/parent identity and relevant response-file evidence in a private observation ledger before a short-lived process exits. Explicit IDE syntax-only static analysis (`/Zs` and `/analyze`, without object output) is ordinary application load when the user keeps apps open; record its variability. Explicit property-only MSBuild queries differ from builds. Unknown invocations remain interference; preserve original overlap flags and failed attempts rather than silently reclassifying a timing as controlled.
+
+Include evaluated ProjectReference source directories in the initial include inventory, including Native Local. Relative reference headers are not necessarily /I roots; learning their scope only from the first read tlogs invalidates the next unchanged build. Do not hide this by stamping a post-compile fingerprint over previously unexamined membership. Verify first no-op and absent sibling include addition/removal through real MSBuild references.
+
+Report compile-free and link-free repeated builds separately. Check linker/librarian invocation as well as object timestamps, compiler and RPC events, and compare the native repeated build before attributing relinking to DBE. Budget space for retained attempt results plus published PDB copies before starting multi-mode runs. Preserve evidence if a volume fills; compare each pair on the same output volume and disclose separate reference pairs instead of mixing volumes into one result.
+
 ## UI and resource policy
 
 VSIX install success does not establish menu visibility. Verify resource/pkgdef registration, persistent configuration refresh and actual UI execution. Use UTF-8 for redirected output. Project commands preserve solution dependencies/configuration mapping and selected loaded C++ project. If automation flickers, stop repeated input and use user-assisted screenshots.

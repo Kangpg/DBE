@@ -30,3 +30,5 @@ worker-deployment.json
 msbuild.json
 host.json
 *.dbe.json
+__pycache__/
+*.py[cod]

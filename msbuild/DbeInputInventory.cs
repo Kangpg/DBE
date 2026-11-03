@@ -15,6 +15,7 @@ public sealed class DbeInputInventory : Task
     [Required] public string ProjectDirectory { get; set; }
     [Required] public string StateFile { get; set; }
     public ITaskItem[] Sources { get; set; }
+    public ITaskItem[] ProjectReferences { get; set; }
     public string[] SearchRoots { get; set; }
     public string[] ExcludedRoots { get; set; }
     public string[] RuntimeInputs { get; set; }
@@ -91,6 +92,11 @@ public sealed class DbeInputInventory : Task
             var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             roots.Add(Full(ProjectDirectory));
             foreach (var source in Sources ?? new ITaskItem[0]) roots.Add(Path.GetDirectoryName(Full(source.ItemSpec)));
+            // References are caller-declared source scopes, even when their
+            // headers are reached through relative includes rather than /I.
+            // Include them before the first compile; learning them only from
+            // read tlogs makes the next unchanged build appear to add inputs.
+            foreach (var reference in ProjectReferences ?? new ITaskItem[0]) roots.Add(Path.GetDirectoryName(Full(reference.ItemSpec)));
             foreach (var root in (SearchRoots ?? new string[0]).SelectMany(SplitPaths))
                 if (!String.IsNullOrWhiteSpace(root)) roots.Add(Full(root.Trim().Trim('"')));
             // An observed absolute include may live outside declared search

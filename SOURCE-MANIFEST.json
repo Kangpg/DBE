@@ -9,8 +9,8 @@
     },
     {
       "file": ".gitignore",
-      "bytes": 269,
-      "sha256": "a915def14fece00a9c80a9d884de87af6089cd912ad9e721b801b109d89e8008"
+      "bytes": 292,
+      "sha256": "add7724418ef4ab3345db468bdf31258e022f7b962d08e64f7db449359deb63e"
     },
     {
       "file": "AGENTS.md",
@@ -19,28 +19,28 @@
     },
     {
       "file": "CHANGELOG.md",
-      "bytes": 6441,
-      "sha256": "d366d67d82ae7bb549c9dc2a79a0d93d3e507474b79ee4c704a2a4d59035268e"
+      "bytes": 8533,
+      "sha256": "67e53e1cb0372fafb4af59c32ac6b54d36e6831030578404d287c4b41b6106f6"
     },
     {
       "file": "README.md",
-      "bytes": 2086,
-      "sha256": "b93358973b6fde8188cb6b2c06325fccad9c0333d9e0f77f3d31e81aa14eb621"
+      "bytes": 2281,
+      "sha256": "7cc33eb505d4c180a9106c4a475e49bc14c1b6c231af28fff6324384be74a92e"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 15258,
-      "sha256": "ca79f0da8835e97bd80e0caaeb888a32732bf3a9222222c9329e3911df5aa387"
+      "bytes": 16774,
+      "sha256": "46e3185f6ea4a797c5278f1ad8ef2e6311086fa2054bbebc9f3ffd29b0f54060"
     },
     {
       "file": "VERSION",
       "bytes": 6,
-      "sha256": "3ab94c04d24986f3af288ba1cda2c0bbddbc5a89dff097182805f54578e1ea75"
+      "sha256": "1725bfa6524c5265e7c171cf06568417d39b947fff49c242f03859479c82334b"
     },
     {
       "file": "docs/benchmark.md",
-      "bytes": 12050,
-      "sha256": "a905dd8418ea176481c7bd8e89a352249e90cb46ddf4437a391e750a8e85e127"
+      "bytes": 19204,
+      "sha256": "abdf5a38ce29758f3d311ec939ea9415f7408b57d89d90caac295730d99fc3b7"
     },
     {
       "file": "docs/connection.md",
@@ -59,13 +59,13 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 8084,
-      "sha256": "1c010eb6de708e7af18ab117eaa142411f3f63bd4d5d26625bbd94ef209ce3b9"
+      "bytes": 10089,
+      "sha256": "48c4dd30ff8931fec5ca384b42ea1872edda1950a0df5c990309815f6e31131b"
     },
     {
       "file": "docs/native-pch.md",
-      "bytes": 13340,
-      "sha256": "90ba5f8e62b2c523265c48f8e4b91dc9ce1e8a179756ff86ee6ed11d9f438b79"
+      "bytes": 13850,
+      "sha256": "1363543bbcd9ae7d061af88b2bfd153eab2eeb0e46b747b3184c3371bfb80787"
     },
     {
       "file": "docs/usage.md",
@@ -129,13 +129,13 @@
     },
     {
       "file": "msbuild/DBE.Remote.targets",
-      "bytes": 7139,
-      "sha256": "e627ed7e1df269a91d2090819094be4ed8eea3155590983619816da0d3ed51bb"
+      "bytes": 7179,
+      "sha256": "be41ad2c174c45ce254d59e65782e4552e0d0a40117c48c6072580ea8a335607"
     },
     {
       "file": "msbuild/DbeInputInventory.cs",
-      "bytes": 8465,
-      "sha256": "47ff37ff805f1efcab9ae0b9d82f3fd27002fad5e8747e696dad8148289ad252"
+      "bytes": 8968,
+      "sha256": "0d29367c99d7e021c395749c262403cde5fb860630330030542864d2e613d80b"
     },
     {
       "file": "native/build-host.cpp",
@@ -259,8 +259,8 @@
     },
     {
       "file": "scripts/Test-HybridIncremental.ps1",
-      "bytes": 3662,
-      "sha256": "a548848a6c482f311c77b74e1e855a9e191169961917acbfd72f9ebfb6497540"
+      "bytes": 6112,
+      "sha256": "08115a4b9b9123933d07e02d4abc8470a540503b091b74b75917def7403e0b64"
     },
     {
       "file": "scripts/Test-LocalBatchCancellation.ps1",
@@ -360,7 +360,7 @@
     {
       "file": "vsix/AssemblyInfo.cs",
       "bytes": 179,
-      "sha256": "8ec1ba2fa5e36d598c0931df93e3cb752ae2c54c0def6c07d9ed48d6164293b0"
+      "sha256": "72d58571752a83780f0ac1e953f101c39da07cfb3a856f6fe1086dd190f74c18"
     },
     {
       "file": "vsix/Commands.vsct",
@@ -405,7 +405,7 @@
     {
       "file": "vsix/source.extension.vsixmanifest",
       "bytes": 1179,
-      "sha256": "a7ab600b5547e60fde2948efc42b4ac7133fc90617b3ec21c8a4d595425448ad"
+      "sha256": "c09151630495145e20352264b8671065632d68d9d61ed9aba07068cb4d7b5905"
     },
     {
       "file": "worker/BuildCancellation.cs",

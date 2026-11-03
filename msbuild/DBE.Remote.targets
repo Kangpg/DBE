@@ -35,7 +35,7 @@
     <Error Condition="'$(DBEConfiguredCompiler)' == '' Or '$(DBESelectedCompiler)' != '$(DBEConfiguredCompiler)'" Text="The project-selected compiler differs from this adapter configuration. Create an adapter for the selected toolchain." />
     <DbeInputInventory Condition="'$(DBEIncrementalTracking)' == 'true'" ProjectDirectory="$(MSBuildProjectDirectory)"
         NativeLocal="$([System.String]::Equals('$(DBELocal)', 'true'))"
-        StateFile="$(IntDir)dbe-input-inventory.txt" Sources="@(ClCompile)" TrackerDirectory="$(TLogLocation)"
+        StateFile="$(IntDir)dbe-input-inventory.txt" Sources="@(ClCompile)" ProjectReferences="@(ProjectReference)" TrackerDirectory="$(TLogLocation)"
         ObservedInputExclusions="$(ExcludePath);$(SystemRoot);$(windir);$([System.IO.Path]::GetDirectoryName('$(DBEConfiguredCompiler)'));$(DBERuntimeDirectories)"
         SearchRoots="$(DBENativeInputRoots);$(IncludePath);$(ExternalIncludePath);@(ClCompile->'%(AdditionalIncludeDirectories)');@(ClCompile->'%(ExternalIncludePath)')"
         ExcludedRoots="$(IntDir);$(OutDir);$(DBEAdapterDirectory);$(DBEStateDirectory);$(DBELeaseDirectory)"
