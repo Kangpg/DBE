@@ -22,6 +22,7 @@ sealed class Worker : IDisposable
     private readonly CancellationTokenSource shutdown = new();
     private int sequence, poisoned;
     private int disposed;
+    private static readonly List<Worker> retained = [];
     private readonly NativeInputCache inputCache;
     private readonly RuntimeInputs runtimeInputs;
     private readonly NativeCompilationCache nativeCache;
@@ -278,7 +279,21 @@ sealed class Worker : IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-        Stop(); nativeCache.Dispose(); certificate.Dispose(); compiler.Dispose(); inputCache.Dispose(); runtimeInputs.Dispose(); ownership.Dispose();
+        Stop();
+        // Serve has joined all attempts. Unknown cleanup retains the entire
+        // owner, including input/compiler pins and the exclusive state lock.
+        if (Volatile.Read(ref poisoned) != 0 || nativeCache.Unhealthy) { Retain(); return; }
+        // No native borrower remains. Release shared hard-link pins before
+        // removing context trees, including on Windows versions that deny
+        // unlinking an alias while another alias is pinned without DELETE.
+        inputCache.Dispose(); runtimeInputs.Dispose(); nativeCache.Dispose();
+        if (nativeCache.Unhealthy) { Retain(); return; }
+        certificate.Dispose(); compiler.Dispose(); ownership.Dispose();
         slots.Dispose(); connections.Dispose(); headerReaders.Dispose(); shutdown.Dispose();
+    }
+    private void Retain()
+    {
+        Event("cleanup-retained", "", state);
+        lock (retained) retained.Add(this);
     }
 }

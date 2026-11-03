@@ -14,7 +14,6 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
     private const long ByteLimit = 4L * 1024 * 1024 * 1024, PchLimit = 1536L * 1024 * 1024;
     private readonly SemaphoreSlim admission = new(1);
     private readonly Dictionary<string, Entry> entries = new(StringComparer.Ordinal);
-    private static readonly List<NativeCompilationCache> retained = [];
     private long inputBuilds, pchBuilds;
     private int unhealthy;
     internal bool Unhealthy => Volatile.Read(ref unhealthy) != 0;
@@ -194,7 +193,7 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
             try { if (Directory.Exists(root)) Directory.Delete(root); }
             catch { Interlocked.Exchange(ref unhealthy, 1); }
         }
-        if (Unhealthy) { lock (retained) retained.Add(this); }
-        else admission.Dispose();
+        // Worker retains this cache and its dependencies when cleanup fails.
+        if (!Unhealthy) admission.Dispose();
     }
 }

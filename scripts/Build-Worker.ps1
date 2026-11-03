@@ -23,4 +23,5 @@ try {
 } finally { Pop-Location }
 Copy-Item -LiteralPath (Join-Path $output 'native\dbe-process.dll') -Destination $publish -Force
 Copy-Item -LiteralPath (Join-Path $output 'paths\dbe-paths.exe') -Destination $publish -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Repair-WorkerState.ps1'),(Join-Path $PSScriptRoot 'Repair-WorkerState.cmd') -Destination $publish -Force
 [pscustomobject]@{Executable=(Join-Path $publish 'dbe-worker.exe');Directory=$publish;Compiler=$tools.Compiler;NativeLog=$nativeLog;ManagedLog=$managedLog}

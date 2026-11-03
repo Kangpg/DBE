@@ -184,6 +184,21 @@ static class NativeReuseSelfTest
         finally { if (worker is not null) { worker.Stop(); await server; worker.Dispose(); } }
         if (contexts is not null)
             Check(!Directory.Exists(contexts) || !Directory.EnumerateFiles(contexts, ".dbe-owned", SearchOption.AllDirectories).Any(), "worker-stopped-and-cached-seed-paths-removed-before-link");
+        if (worker is not null)
+        {
+            string cleanupPair = Path.Combine(directory, "cleanup-failure-pair"); Identity.CreatePair(cleanupPair, compilerPath);
+            var (cleanupConfig, cleanupRoot) = Identity.ReadConfig<WorkerConfig>(Path.Combine(cleanupPair, "worker", "worker.json"));
+            using var cleanupWorker = new Worker(cleanupConfig with { Port = 0 }, cleanupRoot);
+            cleanupWorker.Start(); Task cleanupServer = cleanupWorker.Serve();
+            string state = Path.Combine(cleanupRoot, cleanupConfig.StateDirectory);
+            string unknown = Directory.CreateDirectory(Path.Combine(state, "ctx", "unexpected-context")).FullName;
+            string evidence = Path.Combine(unknown, "evidence.txt"); File.WriteAllText(evidence, "retain unknown data");
+            cleanupWorker.Stop(); await cleanupServer; cleanupWorker.Dispose();
+            bool held = false;
+            try { using var probe = new FileStream(Path.Combine(state, "worker.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException) { held = true; }
+            Check(held && File.ReadAllText(evidence) == "retain unknown data", "shutdown-failure-retains-state-ownership-and-evidence");
+        }
         foreach (string producerKind in new[] { "remote", "original" })
         {
             string linked = Directory.CreateDirectory(Path.Combine(directory, "linked-" + producerKind)).FullName;

@@ -19,23 +19,23 @@
     },
     {
       "file": "CHANGELOG.md",
-      "bytes": 3832,
-      "sha256": "c0e75257804d64cf552975b8da5799657840a454aa20bab46b0727ac17c29953"
+      "bytes": 4910,
+      "sha256": "22aff7da122025c3a9f34c82bd9ca006dc96650171c87571f864bbb74401b254"
     },
     {
       "file": "README.md",
       "bytes": 2086,
-      "sha256": "4fbbf1a59edd8691b2f5edd0027c18cf1a5b9a1102f4dcf6137e912db6930eb7"
+      "sha256": "f05d898247f457e4a50bc4762f1b6bcb668aa1c52ce4be9dbf5e85c25ee395d2"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 13962,
-      "sha256": "e26f0462a04c51cbddfca92a8a4dc8ce7842b53b868bd650277011ccfb3900a8"
+      "bytes": 14638,
+      "sha256": "0d3fb10613dc723e1015e262472c7dd7653e92ef37e5732b73f60d167d1bec1d"
     },
     {
       "file": "VERSION",
       "bytes": 6,
-      "sha256": "71015c979ccb0fc8a0be7ca0ae83046ab045cdc2c8faa09fb2f0f7e440f9b4a6"
+      "sha256": "998f6b887ed7a6ef44e84210d0237b715bed42ea7254f48dc418afec0a484103"
     },
     {
       "file": "docs/benchmark.md",
@@ -54,8 +54,8 @@
     },
     {
       "file": "docs/installation.md",
-      "bytes": 2507,
-      "sha256": "d2a0c48b245ede417f2b567eb1cadfd3c82979f13d56ac32becd62e5f99474b0"
+      "bytes": 2793,
+      "sha256": "da2ec6b9e042bd82955de7a0ae0a11fe9d29d0ed2699e284832056176261eec7"
     },
     {
       "file": "docs/issues.md",
@@ -74,8 +74,8 @@
     },
     {
       "file": "docs/worker-install.md",
-      "bytes": 803,
-      "sha256": "6cfe7b129e25d6b4b3b7a110a526457f3ebf7616b32beb5e60a67e888f73d613"
+      "bytes": 1446,
+      "sha256": "64d7d469eae25446efee281b81875fcb821753c25933b4835324124b13f7f1bc"
     },
     {
       "file": "fixture-remote/forced.h",
@@ -184,8 +184,8 @@
     },
     {
       "file": "scripts/Build-Worker.ps1",
-      "bytes": 2102,
-      "sha256": "4134fd9ca67c9d08c07209f093c47a22eb38c7e9aca722d98fab9b8049c6e9ed"
+      "bytes": 2256,
+      "sha256": "9f2f057406dcfa6857f0f3e5ea07d8032c9e506dd91a19d6cc2e26381ffd846b"
     },
     {
       "file": "scripts/Build-Wrapper.ps1",
@@ -231,6 +231,16 @@
       "file": "scripts/Package-WorkerUpgrade.ps1",
       "bytes": 2363,
       "sha256": "53a8d5d7139b0690f41ed0b97d4109e161750160528eb852246e7cf612ca332f"
+    },
+    {
+      "file": "scripts/Repair-WorkerState.cmd",
+      "bytes": 338,
+      "sha256": "6b2d682a8b543410c6ab2b3ca50468c72a0cd11872851295635ada58ff7e9569"
+    },
+    {
+      "file": "scripts/Repair-WorkerState.ps1",
+      "bytes": 3731,
+      "sha256": "fb8b4b1deb5b940a4223ac94a2709b054d2c012cc8b0283e3f46aa78b0fd7e31"
     },
     {
       "file": "scripts/Set-NormalBuild.ps1",
@@ -308,6 +318,11 @@
       "sha256": "711272fd721d5036dfb524590d7dfe5db6308a816fd60d7fc656651aa15d57a9"
     },
     {
+      "file": "scripts/Test-WorkerStateRecovery.ps1",
+      "bytes": 6478,
+      "sha256": "4b911c6494364807de8d22a24a236d8754db27ca917a503b460cb90d36d09fc9"
+    },
+    {
       "file": "scripts/Test-Wrapper.ps1",
       "bytes": 8436,
       "sha256": "2540541f691bbc1991eb1c8d51c2fa84bf3052521a983deb7236ab65aa81b743"
@@ -345,7 +360,7 @@
     {
       "file": "vsix/AssemblyInfo.cs",
       "bytes": 179,
-      "sha256": "1697c9191dc8b51c84d7747b2b47ac8195dc8de0d7ad925f669c9730204dc4ce"
+      "sha256": "d454bc306336fc08b2d6e46cb96d2256537222d6a1b77aa5151b95fd0ff34c74"
     },
     {
       "file": "vsix/Commands.vsct",
@@ -390,7 +405,7 @@
     {
       "file": "vsix/source.extension.vsixmanifest",
       "bytes": 1179,
-      "sha256": "5511b2567f19eddce7dad1e40891eb028391473f03d363520370a964241debd1"
+      "sha256": "bf79158b4dc8dc4ff36cb2c74ee983bb55ca9cac98b9c54caa79b64bfeaa5395"
     },
     {
       "file": "worker/BuildCancellation.cs",
@@ -474,8 +489,8 @@
     },
     {
       "file": "worker/NativeCompilationCache.cs",
-      "bytes": 11436,
-      "sha256": "11ca08e2279778cec45c14c05a5a3e38e18d0003508a75713e0f4d7f6150d1f6"
+      "bytes": 11390,
+      "sha256": "d544934abddf27120ece3d115969721c5b4a02d65fbc42f908ca67f4201d0dae"
     },
     {
       "file": "worker/NativeContext.cs",
@@ -494,8 +509,8 @@
     },
     {
       "file": "worker/NativeReuseSelfTest.cs",
-      "bytes": 20086,
-      "sha256": "a50592e4bff76555bf41729b34531b0410d4e3698fc73ff51d50c02da02cbf28"
+      "bytes": 21337,
+      "sha256": "cad515606c979f14a4b4cbb8a84064f2f1124b2f1c20fbc7378b63a66ac3844c"
     },
     {
       "file": "worker/PchPair.cs",
@@ -534,8 +549,8 @@
     },
     {
       "file": "worker/Worker.cs",
-      "bytes": 16966,
-      "sha256": "e631c799bf4a9ceb816fc3621691912b5e46f47ed877fc5249773c29f4cddb20"
+      "bytes": 17698,
+      "sha256": "f7401b38f23279aacc1503060df8d83d6715306b0aeb96882d395fe3e1895f58"
     },
     {
       "file": "worker/global.json",

@@ -25,6 +25,8 @@ Worker마다 새 pair를 만든다. `WorkerZip`만 해당 Worker에 전달한다
 
 ZIP을 전부 풀고 `start-worker.cmd`를 실행한다. 기본 TCP port는 43127이다. Self-contained runtime과 compiler를 묶었다면 Worker에 .NET SDK나 VSIX는 필요하지 않다. 현재 console 실행이며 서비스 자동 시작은 지원하지 않는다. Ctrl+C로 종료한다.
 
+남은 컨텍스트·attempt 때문에 재시작이 거부되면 [상태 복구 절차](worker-install.md)를 따른다. `Repair-WorkerState.cmd`는 종료 상태를 확인하고 설정 백업과 새 상태 경로만 만든다. 기존 상태를 삭제하거나 이동하지 않는다.
+
 연결이 방화벽에 막힐 때에만 Worker 폴더의 관리자 PowerShell에서 실행한다:
 
 ```powershell
