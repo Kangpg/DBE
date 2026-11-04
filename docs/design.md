@@ -4,6 +4,7 @@ VSIX → 원래 MSBuild CL Task/추적 → Adapter → local MSVC 또는 TLS Wor
 
 - 프로세스: Job Object를 creation 시점에 할당하고 소유 handle을 유지한다. PID/경로만으로 종료 대상을 결정하지 않는다.
 - PDB 서비스: 0.3.5부터 각 소유 실행에 고유한 `_MSPDBSRV_ENDPOINT_`를 부여한다. `/MP` 자식은 같은 연결점을 상속한다. 별도 Job의 CL/link가 MSPDBSRV를 공유하면 먼저 끝난 Job의 정리가 다른 컴파일의 PDB 연결을 끊을 수 있다. native wrapper와 managed 실행의 공통 native 환경 생산 경계에서 분리하며 기존 Unicode 환경과 숨은 드라이브 항목을 보존한다. `/Zi`·PCH·`/Fd`를 변경하거나 자식 정리를 해제하지 않는다. 같은 서비스 격리 수단은 [Microsoft BuildXL 구현](https://github.com/microsoft/BuildXL/blob/main/Public/Sdk/Experimental/Msvc/Native/Tools/Link/Link.dsc)에서도 확인할 수 있다.
+- PDB 식별: 서비스가 분리되었으므로 같은 PDB의 동시 쓰기는 로컬 PDB 독점 lease로만 막는다. lease 키는 `/Fd` 문자열이 아니라 MSVC가 실제로 쓰는 파일(`vc140.pdb` 기본값, 폴더 지정, `.pdb` 자동 확장자 포함)이다. 호출자가 지정한 `_MSPDBSRV_ENDPOINT_`는 소유 실행의 값으로 의도적으로 대체한다. 설치된 VS 2022 MSBuild/VC targets는 이 변수를 설정하지 않는다.
 - Local 전용: native wrapper로 원래 MSVC PCH/MP를 보존한다. 자신의 빌드에는 Worker용 고정 제한을 적용하지 않는다. 수신 요청의 보호 정책과 구분한다.
 - 파일: 기본 경로는 준비된 TU와 명시 입력을 TLS로 보내고 object/PDB를 검증 후 원자적으로 반영한다. v6 선택 경로는 허용 범위의 원본 입력, Worker별 hash·mtime blob 캐시와 재사용 입력 트리를 사용한다. 소비자 object를 저장하는 빌드 결과 캐시는 아니다.
 - Local staging: object별 hash/attempt 중첩과 compiler 출력 폴더를 분리한다. 짧은 Job 전용 폴더를 사용하고, 확인된 프로세스 정리 후에만 지운다. 최종 목적지 볼륨에서 rename하여 publication한다.

@@ -44,7 +44,8 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
             if (arg.StartsWith("/external:I", StringComparison.Ordinal)) { preprocess.Add("/external:I" + Value("/external:I")); continue; }
             if (arg.StartsWith("/Fo", StringComparison.Ordinal)) { output = Value("/Fo"); continue; }
             if (arg.StartsWith("/Fp", StringComparison.Ordinal)) { pchFile = Path.GetFullPath(Value("/Fp")); continue; }
-            if (arg.StartsWith("/Fd", StringComparison.Ordinal)) { _ = Value("/Fd"); continue; }
+            // MSVC never takes a detached /Fd value; PdbIdentity owns its interpretation.
+            if (arg.StartsWith("/Fd", StringComparison.Ordinal)) continue;
             string? inputOption = new[] { "/FI", "/I", "/D", "/U" }.FirstOrDefault(p => arg.StartsWith(p, StringComparison.Ordinal));
             if (inputOption is not null) { preprocess.Add(inputOption + Value(inputOption)); continue; }
             if (arg is "/X" or "/showIncludes") { preprocess.Add(arg); continue; }
@@ -81,17 +82,28 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
     }
 
     internal static bool CreatesPch(string[] args) => Expand(args).Any(x => x.StartsWith("/Yc", StringComparison.Ordinal) || x.StartsWith("-Yc", StringComparison.Ordinal));
-    internal static string? PdbIdentity(IReadOnlyList<string> args)
+    // The file MSVC actually writes, which is the identity for the exclusive local PDB lease and
+    // for excluding the PDB from input snapshots. Since 0.3.5 every owned Job has a private
+    // MSPDBSRV, so aliased spellings of one file must not produce different leases.
+    // Verified with MSVC 19.44: no /Fd -> cwd\vc140.pdb; trailing '\' or '/' -> dir\vc140.pdb;
+    // no extension -> ".pdb" appended even when a directory of that name exists; another
+    // extension is kept; "/Fd:" is accepted; a bare /Fd keeps the default and does not consume
+    // the next argument. The last /Fd wins.
+    internal const string DefaultPdbName = "vc140.pdb";
+    internal static string? PdbIdentity(IReadOnlyList<string> args, string? workingDirectory = null)
     {
         if (!args.Any(x => x is "/Zi" or "/ZI" or "-Zi" or "-ZI")) return null;
-        string pdb = Path.Combine(Environment.CurrentDirectory, "default-compiler-pdb");
-        for (int i = 0; i < args.Count; i++)
+        string value = "";
+        foreach (string original in args)
         {
-            string arg = args[i].StartsWith('-') ? "/" + args[i][1..] : args[i];
+            string arg = original.StartsWith('-') ? "/" + original[1..] : original;
             if (!arg.StartsWith("/Fd", StringComparison.Ordinal)) continue;
-            pdb = arg.Length > 3 ? arg[3..] : ++i < args.Count ? args[i] : throw new UnsupportedCompile("Missing /Fd");
+            value = arg[3..];
+            if (value.StartsWith(':')) value = value[1..];
         }
-        return Path.GetFullPath(pdb).ToUpperInvariant();
+        if (value.Length == 0 || value.EndsWith('\\') || value.EndsWith('/')) value = Path.Combine(value, DefaultPdbName);
+        else if (!Path.HasExtension(value)) value += ".pdb";
+        return Path.GetFullPath(value, workingDirectory ?? Environment.CurrentDirectory).ToUpperInvariant();
     }
 
     internal static List<string> Expand(string[] args)

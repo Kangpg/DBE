@@ -146,6 +146,7 @@ static class SelfTest
             }
             await NativeContracts(childProbe, directory, token);
             await PdbIsolationContracts(compilerPath, childProbe, directory, token);
+            PdbIdentityContracts(compilerPath, directory, token);
         }
         finally { worker.Stop(); await server; }
         File.WriteAllText(Path.Combine(directory, "checks.json"), JsonSerializer.Serialize(new { checks, scope = "real local TLS loopback and real installed MSVC; two-machine run still required" }, Wire.Json));
@@ -296,6 +297,39 @@ static class SelfTest
             throw new Exception("Object verifier lost debug symbols");
         Execution run = Native.Run(Path.Combine(directory, "verify.exe"), directory, "", 5, 256, CancellationToken.None);
         if (run.Kind != 0 || run.ExitCode != 0) throw new Exception("Returned object had incorrect behavior");
+    }
+
+    // Each owned Job has a private MSPDBSRV, so the exclusive local PDB lease is the only guard
+    // against two Jobs writing one PDB. Aliased /Fd spellings must therefore resolve to the file
+    // the real compiler writes, not to their text.
+    private static void PdbIdentityContracts(string compiler, string directory, CancellationToken token)
+    {
+        string root = Directory.CreateDirectory(Path.Combine(directory, "pdb-identity")).FullName;
+        string[] spellings = ["", "/Fd", "/Fdsub\\", "/Fdsub/", "/Fdsub", "/Fdname", "/Fdname.x", "/Fd:colon.pdb", "-FdDash.pdb", @"/Fdsub\vc140.pdb", "/Fdfirst.pdb /Fdlast"];
+        var identities = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int i = 0; i < spellings.Length; i++)
+        {
+            string dir = Directory.CreateDirectory(Path.Combine(root, i.ToString())).FullName;
+            Directory.CreateDirectory(Path.Combine(dir, "sub"));
+            File.WriteAllText(Path.Combine(dir, "a.cpp"), "int f(){return 1;}");
+            string arguments = "/nologo /c /Zi /FS " + spellings[i] + " a.cpp";
+            Execution run = Native.RunInitiator(compiler, dir, arguments, 60, token);
+            if (run.Kind != 0 || run.ExitCode != 0) throw new Exception("PDB identity fixture failed for '" + spellings[i] + "': " + Encoding.UTF8.GetString(run.Stdout));
+            string[] written = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                .Where(file => !Path.GetFileName(file).Equals("a.cpp", StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(file).Equals("a.obj", StringComparison.OrdinalIgnoreCase)).ToArray();
+            string? identity = ClInvocation.PdbIdentity(ClInvocation.Expand(ClInvocation.Split(arguments)), dir);
+            Check(written.Length == 1 && identity == Path.GetFullPath(written[0]).ToUpperInvariant(), "pdb-identity-matches-real-MSVC-file:" + (spellings[i].Length == 0 ? "default" : spellings[i]));
+            identities[spellings[i]] = identity![dir.Length..];
+        }
+        Check(identities[""] == identities["/Fd"] && identities["/Fdsub\\"] == identities["/Fdsub/"] && identities["/Fdsub/"] == identities[@"/Fdsub\vc140.pdb"] &&
+            identities["/Fdsub"] != identities["/Fdsub\\"] && identities["/Fdfirst.pdb /Fdlast"] == @"\LAST.PDB", "aliased-Fd-spellings-share-one-PDB-lease-and-distinct-files-do-not");
+        string detached = Path.Combine(root, "detached");
+        Directory.CreateDirectory(detached);
+        File.WriteAllText(Path.Combine(detached, "a.cpp"), "int f(){return 1;}");
+        // Absolute source: the self-test Worker shares this process, so never change its cwd.
+        string detachedArgs = "/nologo /c /Zi /Fd other.pdb " + ClInvocation.Quote(Path.Combine(detached, "a.cpp"));
+        try { ClInvocation.ParseBatch(ClInvocation.Expand(ClInvocation.Split(detachedArgs)).ToArray()); throw new Exception("Detached /Fd value was consumed"); }
+        catch (UnsupportedCompile error) { Check(error.Message == "Unsupported compiler argument: other.pdb", "detached-Fd-value-is-not-consumed-as-a-PDB-name:" + error.Message); }
     }
 
     private static async Task PdbIsolationContracts(string compiler, string child, string directory, CancellationToken token)
