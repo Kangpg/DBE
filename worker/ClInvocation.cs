@@ -18,8 +18,9 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
         }
         return count;
     }
-    internal static ClInvocation[] ParseBatch(string[] args, bool allowProducer = false)
+    internal static ClInvocation[] ParseBatch(string[] args, bool allowProducer = false, MsvcPathContext? context = null)
     {
+        context ??= MsvcPathContext.Process();
         var all = Expand(args);
         List<(int Index, string Path, string Argument)> sources = []; string? output = null, pchFile = null;
         bool pchProducer = false;
@@ -42,9 +43,9 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
             if (arg is "/nologo" or "/TP" or "/Gm-" or "/errorReport:prompt" or "/errorReport:none" or "/errorReport:queue") continue;
             if (arg == "/external:anglebrackets" || arg.StartsWith("/external:env:", StringComparison.Ordinal)) { preprocess.Add(arg); continue; }
             if (arg.StartsWith("/external:I", StringComparison.Ordinal)) { preprocess.Add("/external:I" + Value("/external:I")); continue; }
-            if (arg.StartsWith("/Fo", StringComparison.Ordinal)) { output = Value("/Fo"); continue; }
-            if (arg.StartsWith("/Fp", StringComparison.Ordinal)) { pchFile = Path.GetFullPath(Value("/Fp")); continue; }
-            // MSVC never takes a detached /Fd value; PdbIdentity owns its interpretation.
+            // MSVC never takes detached /Fo, /Fp or /Fd values; MsvcPath owns their resolution.
+            if (arg.StartsWith("/Fo", StringComparison.Ordinal)) { output = MsvcPath.OptionValue(arg, "/Fo"); continue; }
+            if (arg.StartsWith("/Fp", StringComparison.Ordinal)) { pchFile = MsvcPath.ResolveOutput(MsvcPath.OptionValue(arg, "/Fp"), MsvcPath.DefaultPchName, ".pch", context); continue; }
             if (arg.StartsWith("/Fd", StringComparison.Ordinal)) continue;
             string? inputOption = new[] { "/FI", "/I", "/D", "/U" }.FirstOrDefault(p => arg.StartsWith(p, StringComparison.Ordinal));
             if (inputOption is not null) { preprocess.Add(inputOption + Value(inputOption)); continue; }
@@ -55,7 +56,7 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
             if (CompileOptions.Supports(arg)) { preprocess.Add(arg); remote.Add(arg); continue; }
             if (!arg.StartsWith('/') && !arg.StartsWith('-') && new[] { ".cpp", ".cc", ".cxx" }.Contains(Path.GetExtension(arg), StringComparer.OrdinalIgnoreCase))
             {
-                sources.Add((i, Path.GetFullPath(arg), arg)); continue;
+                sources.Add((i, MsvcPath.Absolute(arg, context), arg)); continue;
             }
             throw new UnsupportedCompile("Unsupported compiler argument: " + arg);
         }
@@ -69,41 +70,30 @@ sealed record ClInvocation(string Source, string Object, string[] PreprocessOpti
         List<ClInvocation> batch = [];
         foreach (var source in sources)
         {
-            string destination = string.IsNullOrEmpty(output) ? Path.GetFileNameWithoutExtension(source.Path) + ".obj" : output;
-            bool directory = destination.EndsWith('\\') || destination.EndsWith('/') || Directory.Exists(destination);
-            if (sources.Count > 1 && !string.IsNullOrEmpty(output) && !directory) throw new UnsupportedCompile("Multiple sources require an object directory");
-            if (directory) destination = Path.Combine(destination, Path.GetFileNameWithoutExtension(source.Path) + ".obj");
-            destination = Path.GetFullPath(destination);
+            string value = output ?? "";
+            if (sources.Count > 1 && !MsvcPath.NamesDirectory(value)) throw new UnsupportedCompile("Multiple sources require an object directory");
+            string destination = MsvcPath.ResolveOutput(value, Path.GetFileNameWithoutExtension(source.Path) + ".obj", ".obj", context);
             if (!Path.GetExtension(destination).Equals(".obj", StringComparison.OrdinalIgnoreCase)) throw new UnsupportedCompile("Expected an object output");
-            batch.Add(new(source.Path, destination, preprocess.ToArray(), remote.ToArray(), [..common, source.Argument], codePage, pchHeader, PdbIdentity(all), pchFile, source.Argument, pchProducer));
+            batch.Add(new(source.Path, destination, preprocess.ToArray(), remote.ToArray(), [..common, source.Argument], codePage, pchHeader, PdbIdentity(all, context), pchFile, source.Argument, pchProducer));
         }
         if (batch.Select(x => x.Object).Distinct(StringComparer.OrdinalIgnoreCase).Count() != batch.Count) throw new UnsupportedCompile("Object filename collision");
         return batch.ToArray();
     }
 
     internal static bool CreatesPch(string[] args) => Expand(args).Any(x => x.StartsWith("/Yc", StringComparison.Ordinal) || x.StartsWith("-Yc", StringComparison.Ordinal));
-    // The file MSVC actually writes, which is the identity for the exclusive local PDB lease and
-    // for excluding the PDB from input snapshots. Since 0.3.5 every owned Job has a private
-    // MSPDBSRV, so aliased spellings of one file must not produce different leases.
-    // Verified with MSVC 19.44: no /Fd -> cwd\vc140.pdb; trailing '\' or '/' -> dir\vc140.pdb;
-    // no extension -> ".pdb" appended even when a directory of that name exists; another
-    // extension is kept; "/Fd:" is accepted; a bare /Fd keeps the default and does not consume
-    // the next argument. The last /Fd wins.
-    internal const string DefaultPdbName = "vc140.pdb";
-    internal static string? PdbIdentity(IReadOnlyList<string> args, string? workingDirectory = null)
+    // The PDB MSVC actually writes: the identity for the exclusive local PDB lease and for
+    // excluding the PDB from input snapshots. Since 0.3.5 every owned Job has a private MSPDBSRV,
+    // so aliased spellings of one file must share one lease. See MsvcPath for verified rules.
+    internal static string? PdbIdentity(IReadOnlyList<string> args, MsvcPathContext? context = null)
     {
         if (!args.Any(x => x is "/Zi" or "/ZI" or "-Zi" or "-ZI")) return null;
         string value = "";
         foreach (string original in args)
         {
             string arg = original.StartsWith('-') ? "/" + original[1..] : original;
-            if (!arg.StartsWith("/Fd", StringComparison.Ordinal)) continue;
-            value = arg[3..];
-            if (value.StartsWith(':')) value = value[1..];
+            if (arg.StartsWith("/Fd", StringComparison.Ordinal)) value = MsvcPath.OptionValue(arg, "/Fd");
         }
-        if (value.Length == 0 || value.EndsWith('\\') || value.EndsWith('/')) value = Path.Combine(value, DefaultPdbName);
-        else if (!Path.HasExtension(value)) value += ".pdb";
-        return Path.GetFullPath(value, workingDirectory ?? Environment.CurrentDirectory).ToUpperInvariant();
+        return MsvcPath.ResolveOutput(value, MsvcPath.DefaultPdbName, ".pdb", context ?? MsvcPathContext.Process()).ToUpperInvariant();
     }
 
     internal static List<string> Expand(string[] args)

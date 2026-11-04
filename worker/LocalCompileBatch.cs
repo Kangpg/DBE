@@ -84,7 +84,7 @@ static partial class MsBuildAdapter
         for (int i = 0; i < invocation.LocalOptions.Length - 1; i++)
         {
             string original = invocation.LocalOptions[i], arg = original.StartsWith('-') ? "/" + original[1..] : original;
-            if (arg.StartsWith("/Fo", StringComparison.Ordinal)) { if (arg.Length == 3) i++; continue; }
+            if (arg.StartsWith("/Fo", StringComparison.Ordinal)) continue; // MSVC never takes a detached value
             if (arg.StartsWith("/MP", StringComparison.Ordinal)) continue;
             options.Add(original);
         }

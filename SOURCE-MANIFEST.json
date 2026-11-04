@@ -19,23 +19,23 @@
     },
     {
       "file": "CHANGELOG.md",
-      "bytes": 22414,
-      "sha256": "3f4611e838b4921dbc63cc13adbc1f6304b69d8f94204daa1e6f8a7f253e8b77"
+      "bytes": 25102,
+      "sha256": "0ce0402e733d3ff140955f2eed623e930d6185eefbca2a24241a3dd3bb5b7bd0"
     },
     {
       "file": "README.md",
       "bytes": 3148,
-      "sha256": "308b18e71927978bd54d12b22330fee2c1b21a7a4e2d829b5c80f51148a8a273"
+      "sha256": "41e94a686528e9ad59f59a760b3d73d36f9b57b7c641c11b4f96f6c48dff2b75"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 22253,
-      "sha256": "09bff08a246d4cc46c44c5025ae6de9a15a8449526ebd9856c5b7b264d8abc9b"
+      "bytes": 22743,
+      "sha256": "3311d08fbb1728073973aebc6eb3329be5105c7e2d74ecf7aa7fa3e58e9a3884"
     },
     {
       "file": "VERSION",
       "bytes": 6,
-      "sha256": "6d7ff4be0be7debf12dc50067f10057f5d85815ef89e542bc291bc2c893cbbbb"
+      "sha256": "2e376439ec341f14ae018b8aa4796b9336702e6a59d6c42b91f61d84baac9807"
     },
     {
       "file": "docs/benchmark.md",
@@ -49,8 +49,8 @@
     },
     {
       "file": "docs/design.md",
-      "bytes": 3718,
-      "sha256": "9bb114ae1b5fd3851c7c79f3c60f2ed32b04eed4d1864802b23c45527692f425"
+      "bytes": 3932,
+      "sha256": "71f8947fd4aef7e839011e5fa97639cee05257ace71ccbd591efee482b806d72"
     },
     {
       "file": "docs/installation.md",
@@ -59,8 +59,8 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 15485,
-      "sha256": "924102b7d2a023ae504d326fb560d336c92fe42fb9736bdd87bcdbf0c99950ba"
+      "bytes": 16046,
+      "sha256": "87e09fcbc757923297017abcf6bd087bbb31873268575fc5a1c0888c90dd6faf"
     },
     {
       "file": "docs/native-pch.md",
@@ -405,7 +405,7 @@
     {
       "file": "vsix/AssemblyInfo.cs",
       "bytes": 179,
-      "sha256": "80fd9baccece6b347b6bbeb7d22c54bc4875d481a4ea4f6047476d2d8451f24b"
+      "sha256": "aea7f061638e84dba97792c8e537f20c5670cbdf67e7ac60b2e40d6441913067"
     },
     {
       "file": "vsix/Commands.vsct",
@@ -450,7 +450,7 @@
     {
       "file": "vsix/source.extension.vsixmanifest",
       "bytes": 1179,
-      "sha256": "7db03752f298e7b320b5c52d29e427173022c2aa5c1a5020486b8dea7a0e608c"
+      "sha256": "d7a3af64e3d4d419dde364420fca73f7a193d6b0ef34333aaac2828e37995dd6"
     },
     {
       "file": "worker/BuildCancellation.cs",
@@ -464,8 +464,8 @@
     },
     {
       "file": "worker/ClInvocation.cs",
-      "bytes": 10879,
-      "sha256": "16e14300c534f2778bbcf965c50977978b2e7dc26528269568d389450062d827"
+      "bytes": 10221,
+      "sha256": "7c158ff450fce8cf4795cf22b49c71d2a7f7c2593fee9021c044d8acdfc47b15"
     },
     {
       "file": "worker/Client.cs",
@@ -504,8 +504,8 @@
     },
     {
       "file": "worker/LocalCompileBatch.cs",
-      "bytes": 8926,
-      "sha256": "7c89df96a5483fba316a3ec27cf8f05524cd836c60feb3f29fd5baa4f66fd0da"
+      "bytes": 8933,
+      "sha256": "688633272e9184344bdb15ae1fedc3d3962c1509cd26771f3832b08a4e166c17"
     },
     {
       "file": "worker/MappedCompile.cs",
@@ -521,6 +521,11 @@
       "file": "worker/MsBuildAdapter.cs",
       "bytes": 27897,
       "sha256": "98af488256313de18a08ebb5d846bd010fa8cfdca791145393ef5daefa2fa2c5"
+    },
+    {
+      "file": "worker/MsvcPath.cs",
+      "bytes": 3023,
+      "sha256": "0efcce5c8449ee5493c59202537e2883a8daf7bd686f365c97d83ae1653b9a95"
     },
     {
       "file": "worker/NativeBatch.cs",
@@ -594,8 +599,8 @@
     },
     {
       "file": "worker/SelfTest.cs",
-      "bytes": 40450,
-      "sha256": "d068fa860629afeac7b43ae416299c4a454b535be047c950e19c3c7049a683e4"
+      "bytes": 52601,
+      "sha256": "d05531a5f4d3ca371ad8e75b047efcbf003c784d59664974236634ad263c4697"
     },
     {
       "file": "worker/Worker.cs",

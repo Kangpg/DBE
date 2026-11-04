@@ -146,7 +146,8 @@ static class SelfTest
             }
             await NativeContracts(childProbe, directory, token);
             await PdbIsolationContracts(compilerPath, childProbe, directory, token);
-            PdbIdentityContracts(compilerPath, directory, token);
+            MsvcPathContracts(compilerPath, directory, token);
+            await PdbLeaseAliasContracts(compilerPath, directory, Path.Combine(pair, "client", "client.json"));
         }
         finally { worker.Stop(); await server; }
         File.WriteAllText(Path.Combine(directory, "checks.json"), JsonSerializer.Serialize(new { checks, scope = "real local TLS loopback and real installed MSVC; two-machine run still required" }, Wire.Json));
@@ -299,37 +300,192 @@ static class SelfTest
         if (run.Kind != 0 || run.ExitCode != 0) throw new Exception("Returned object had incorrect behavior");
     }
 
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "SetEnvironmentVariableW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetProcessVariable(string name, string? value);
+
     // Each owned Job has a private MSPDBSRV, so the exclusive local PDB lease is the only guard
-    // against two Jobs writing one PDB. Aliased /Fd spellings must therefore resolve to the file
-    // the real compiler writes, not to their text.
-    private static void PdbIdentityContracts(string compiler, string directory, CancellationToken token)
+    // against two Jobs writing one PDB, and /Fo and /Fp name the files DBE publishes and pins.
+    // Every spelling must resolve to the file the real compiler writes, not to its text. Drive-
+    // relative spellings use a second volume whose current directory comes from "=X:"; the
+    // compiler inherits it through the same environment producer as production launches.
+    private static void MsvcPathContracts(string compiler, string directory, CancellationToken token)
     {
-        string root = Directory.CreateDirectory(Path.Combine(directory, "pdb-identity")).FullName;
-        string[] spellings = ["", "/Fd", "/Fdsub\\", "/Fdsub/", "/Fdsub", "/Fdname", "/Fdname.x", "/Fd:colon.pdb", "-FdDash.pdb", @"/Fdsub\vc140.pdb", "/Fdfirst.pdb /Fdlast"];
+        string root = Directory.CreateDirectory(Path.Combine(directory, "msvc-path")).FullName;
+        char same = char.ToUpperInvariant(root[0]);
+        string temp = Path.GetFullPath(Path.GetTempPath());
+        char? other = temp.Length > 2 && temp[1] == ':' && char.ToUpperInvariant(temp[0]) != same ? char.ToUpperInvariant(temp[0]) : null;
+        string? otherBase = other is null ? null : Directory.CreateDirectory(Path.Combine(temp, "dbe-msvc-path-" + Guid.NewGuid().ToString("N"))).FullName;
+        string driveVariable = "=" + other + ":";
+        string? previousDrive = other is null ? null : Environment.GetEnvironmentVariable(driveVariable);
+        (string Kind, string Spelling)[] cases = [
+            ("Fd", ""), ("Fd", "/Fd"), ("Fd", "/Fdsub\\"), ("Fd", "/Fdsub/"), ("Fd", "/Fdsub"), ("Fd", "/Fdname"), ("Fd", "/Fdname.x"),
+            ("Fd", "/Fd:colon.pdb"), ("Fd", "-FdDash.pdb"), ("Fd", @"/Fdsub\vc140.pdb"), ("Fd", "/Fdfirst.pdb /Fdlast"),
+            ("Fd", "/Fd{same}:same.pdb"), ("Fd", "/Fd{other}:other.pdb"), ("Fd", @"/Fd{other}:sub\"),
+            ("Fo", ""), ("Fo", "/Fo"), ("Fo", "/Fo:colon.obj"), ("Fo", "/Fosub"), ("Fo", "/Fosub\\"), ("Fo", "/Foname"), ("Fo", "-FoDash.obj"),
+            ("Fo", "/Fofirst.obj /Folast.obj"), ("Fo", "/Fo{same}:same.obj"), ("Fo", "/Fo{other}:odrive.obj"),
+            ("Fp", "/Fp"), ("Fp", "/Fp:colon.pch"), ("Fp", "/Fpname"), ("Fp", "/Fpsub\\"), ("Fp", "/Fpsub"), ("Fp", "/Fpfirst.pch /Fplast.pch"),
+            ("Fp", "/Fp{other}:odrive.pch")];
         var identities = new Dictionary<string, string>(StringComparer.Ordinal);
-        for (int i = 0; i < spellings.Length; i++)
+        int skipped = 0;
+        try
         {
-            string dir = Directory.CreateDirectory(Path.Combine(root, i.ToString())).FullName;
-            Directory.CreateDirectory(Path.Combine(dir, "sub"));
-            File.WriteAllText(Path.Combine(dir, "a.cpp"), "int f(){return 1;}");
-            string arguments = "/nologo /c /Zi /FS " + spellings[i] + " a.cpp";
-            Execution run = Native.RunInitiator(compiler, dir, arguments, 60, token);
-            if (run.Kind != 0 || run.ExitCode != 0) throw new Exception("PDB identity fixture failed for '" + spellings[i] + "': " + Encoding.UTF8.GetString(run.Stdout));
-            string[] written = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
-                .Where(file => !Path.GetFileName(file).Equals("a.cpp", StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(file).Equals("a.obj", StringComparison.OrdinalIgnoreCase)).ToArray();
-            string? identity = ClInvocation.PdbIdentity(ClInvocation.Expand(ClInvocation.Split(arguments)), dir);
-            Check(written.Length == 1 && identity == Path.GetFullPath(written[0]).ToUpperInvariant(), "pdb-identity-matches-real-MSVC-file:" + (spellings[i].Length == 0 ? "default" : spellings[i]));
-            identities[spellings[i]] = identity![dir.Length..];
+            for (int i = 0; i < cases.Length; i++)
+            {
+                var (kind, spelling) = cases[i];
+                if (spelling.Contains("{other}") && other is null) { skipped++; continue; }
+                string dir = Directory.CreateDirectory(Path.Combine(root, i.ToString())).FullName;
+                Directory.CreateDirectory(Path.Combine(dir, "sub"));
+                File.WriteAllText(Path.Combine(dir, "p.h"), "inline int g(){return 2;}");
+                File.WriteAllText(Path.Combine(dir, "a.cpp"), "#include \"p.h\"\nint f(){return g();}");
+                string? otherDir = otherBase is null ? null : Directory.CreateDirectory(Path.Combine(otherBase, i.ToString(), "sub")).Parent!.FullName;
+                if (otherDir is not null && !SetProcessVariable(driveVariable, otherDir)) throw new Exception("Cannot set the fixture drive directory");
+                string text = spelling.Replace("{same}", same.ToString()).Replace("{other}", other?.ToString() ?? "");
+                string arguments = kind switch { "Fd" => "/nologo /c /Zi /FS ", "Fo" => "/nologo /c ", _ => "/nologo /c /Ycp.h " } + text + " a.cpp";
+                Execution run = Native.RunInitiator(compiler, dir, arguments, 60, token);
+                if (run.Kind != 0 || run.ExitCode != 0) throw new Exception("MSVC path fixture failed for '" + spelling + "': " + Encoding.UTF8.GetString(run.Stdout));
+                string[] written = new[] { dir, otherDir }.OfType<string>().SelectMany(d => Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories))
+                    .Where(file => Path.GetFileName(file) is not ("a.cpp" or "p.h"))
+                    .Where(file => kind switch { "Fd" => !Path.GetFileName(file).Equals("a.obj", StringComparison.OrdinalIgnoreCase), "Fp" => Path.GetExtension(file) == ".pch", _ => true })
+                    .ToArray();
+                // The production lookup itself reads "=X:" from this process.
+                var context = new MsvcPathContext(dir, drive => Environment.GetEnvironmentVariable("=" + drive + ":"));
+                var parsedArgs = ClInvocation.Expand(ClInvocation.Split(arguments));
+                string? resolved = kind switch
+                {
+                    "Fd" => ClInvocation.PdbIdentity(parsedArgs, context),
+                    "Fo" => ClInvocation.ParseBatch(parsedArgs.ToArray(), false, context)[0].Object,
+                    _ => ClInvocation.ParseBatch(parsedArgs.ToArray(), true, context)[0].PchFile
+                };
+                Check(written.Length == 1 && resolved is not null && Path.GetFullPath(written[0]).Equals(resolved, StringComparison.OrdinalIgnoreCase),
+                    "msvc-" + kind + "-path-matches-real-compiler:" + (spelling.Length == 0 ? "default" : spelling));
+                identities[kind + spelling] = resolved!.StartsWith(dir, StringComparison.OrdinalIgnoreCase) ? resolved[dir.Length..].ToUpperInvariant() : resolved.ToUpperInvariant();
+            }
         }
-        Check(identities[""] == identities["/Fd"] && identities["/Fdsub\\"] == identities["/Fdsub/"] && identities["/Fdsub/"] == identities[@"/Fdsub\vc140.pdb"] &&
-            identities["/Fdsub"] != identities["/Fdsub\\"] && identities["/Fdfirst.pdb /Fdlast"] == @"\LAST.PDB", "aliased-Fd-spellings-share-one-PDB-lease-and-distinct-files-do-not");
-        string detached = Path.Combine(root, "detached");
-        Directory.CreateDirectory(detached);
+        finally
+        {
+            if (other is not null) SetProcessVariable(driveVariable, previousDrive);
+            if (otherBase is not null) Directory.Delete(otherBase, true);
+        }
+        Check(identities["Fd"] == identities["Fd/Fd"] && identities["Fd/Fdsub\\"] == identities["Fd/Fdsub/"] && identities["Fd/Fdsub/"] == identities[@"Fd/Fdsub\vc140.pdb"] &&
+            identities["Fd/Fdsub"] != identities["Fd/Fdsub\\"] && identities["Fd/Fdfirst.pdb /Fdlast"] == @"\LAST.PDB" &&
+            identities["Fo/Fosub"] == @"\SUB.OBJ" && identities["Fp/Fpsub"] == @"\SUB.PCH", "aliased-spellings-share-one-identity-and-existing-directories-without-separator-are-files");
+        Check(skipped == 0 || other is null, other is null ? "drive-relative-cases-unverified-temp-shares-fixture-volume" : "drive-relative-cases-use-working-directory-or-inherited-drive-directory");
+        string detached = Directory.CreateDirectory(Path.Combine(root, "detached")).FullName;
         File.WriteAllText(Path.Combine(detached, "a.cpp"), "int f(){return 1;}");
-        // Absolute source: the self-test Worker shares this process, so never change its cwd.
-        string detachedArgs = "/nologo /c /Zi /Fd other.pdb " + ClInvocation.Quote(Path.Combine(detached, "a.cpp"));
-        try { ClInvocation.ParseBatch(ClInvocation.Expand(ClInvocation.Split(detachedArgs)).ToArray()); throw new Exception("Detached /Fd value was consumed"); }
-        catch (UnsupportedCompile error) { Check(error.Message == "Unsupported compiler argument: other.pdb", "detached-Fd-value-is-not-consumed-as-a-PDB-name:" + error.Message); }
+        string sourceArg = ClInvocation.Quote(Path.Combine(detached, "a.cpp"));
+        File.WriteAllText(Path.Combine(detached, "b.cpp"), "int h(){return 3;}");
+        Directory.CreateDirectory(Path.Combine(detached, "existing"));
+        // Absolute sources: the self-test Worker shares this process, so never change its cwd.
+        foreach (var (arguments, expected) in new[] {
+            ("/nologo /c /Zi /Fd other.pdb " + sourceArg, "Unsupported compiler argument: other.pdb"),
+            ("/nologo /c /Fo out.obj " + sourceArg, "Unsupported compiler argument: out.obj"),
+            ("/nologo /c /Ycp.h /Fp x.pch " + sourceArg, "Unsupported compiler argument: x.pch"),
+            ("/nologo /c /Foname.x " + sourceArg, "Expected an object output"),
+            ("/nologo /c " + ClInvocation.Quote("/Fo" + Path.Combine(detached, "existing")) + " " + sourceArg + " " + ClInvocation.Quote(Path.Combine(detached, "b.cpp")), "Multiple sources require an object directory") })
+        {
+            try { ClInvocation.ParseBatch(ClInvocation.Expand(ClInvocation.Split(arguments)).ToArray(), true); throw new Exception("Accepted " + arguments); }
+            catch (UnsupportedCompile error) { Check(error.Message == expected, "detached-or-unsupported-output-spelling-stays-local:" + expected); }
+        }
+    }
+
+    // Without a shared MSPDBSRV, two Jobs writing one PDB fail with C1041 (reproduced with real
+    // MSVC: separate endpoints failed 3/3, a shared endpoint passed 3/3). Aliased /Fd spellings
+    // of one PDB must therefore take one exclusive lease through the production scheduler path,
+    // and cancelling either the running owner or the waiter must leave the other able to finish.
+    private static async Task PdbLeaseAliasContracts(string compiler, string directory, string clientPath)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(240));
+        CancellationToken token = deadline.Token;
+        string root = Directory.CreateDirectory(Path.Combine(directory, "pdb-lease-alias")).FullName;
+        string policy = Path.Combine(root, "policy", "host.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(policy)!);
+        int cores = Environment.ProcessorCount;
+        // Two native Jobs may run at once, so only the PDB lease can serialize these sessions.
+        File.WriteAllText(policy, JsonSerializer.Serialize(new HostPolicy(cores, 2, 256, 1024, 120, CpuBusyPercent: 100, LocalBatchSlots: cores,
+            PreprocessMemoryMiB: 256, LocalBatchMemoryMiB: 1024, PreserveLocalParallelism: true, NativeLocalJobs: 2), Wire.Json));
+        using var scheduler = new HostScheduler(policy, clientPath);
+        static string Sources(string dir, string prefix)
+        {
+            for (int k = 0; k < 4; k++)
+            {
+                var text = new StringBuilder();
+                for (int i = 0; i < 5000; i++)
+                    text.Append("struct S").Append(prefix).Append(k).Append('_').Append(i).Append("{int a;double b;int f()const{return a+").Append(i)
+                        .Append(";}}; S").Append(prefix).Append(k).Append('_').Append(i).Append(" g").Append(prefix).Append(k).Append('_').Append(i).Append(";\n");
+                File.WriteAllText(Path.Combine(dir, prefix + k + ".cpp"), text.ToString());
+            }
+            return string.Join(' ', Enumerable.Range(0, 4).Select(k => prefix + k + ".cpp"));
+        }
+        (string Dir, string ArgsA, string ArgsB) Fixture(string name)
+        {
+            string dir = Directory.CreateDirectory(Path.Combine(root, name)).FullName;
+            Directory.CreateDirectory(Path.Combine(dir, "sub"));
+            string a = Sources(dir, "a"), b = Sources(dir, "b");
+            return (dir, "/nologo /c /Zi /FS /GS- /MP4 /Fdsub\\ " + a, "/nologo /c /Zi /FS /GS- /MP4 " + ClInvocation.Quote(@"/Fdsub\vc140.pdb") + " " + b);
+        }
+        string Pdb(string dir, string arguments) =>
+            ClInvocation.ParseBatch(ClInvocation.Expand(ClInvocation.Split(arguments)).ToArray(), false, new MsvcPathContext(dir, _ => null))[0].CompilerPdb!;
+        // Mirrors the native Local owner: lease first, then an owned Job, cleanup confirmed only
+        // when the supervisor did not report uncertain process cleanup.
+        async Task<(Execution Run, long Start, long End)> Session(string dir, string arguments, CancellationToken execution, TaskCompletionSource? acquired = null)
+        {
+            using var lease = await scheduler.Acquire(true, "alias " + arguments[^10..], execution, Pdb(dir, arguments), 1, 1024);
+            acquired?.TrySetResult();
+            long start = Stopwatch.GetTimestamp();
+            lease.BeginExecution();
+            Execution run = await Task.Run(() => Native.RunInitiator(compiler, dir, arguments, 120, execution));
+            if (run.Kind != 5) lease.ConfirmCleanup();
+            return (run, start, Stopwatch.GetTimestamp());
+        }
+        string Output(Execution run) => Encoding.UTF8.GetString(run.Stdout) + Encoding.UTF8.GetString(run.Stderr);
+
+        var both = Fixture("concurrent");
+        Check(Pdb(both.Dir, both.ArgsA) == Pdb(both.Dir, both.ArgsB), "aliased-Fd-spellings-request-one-PDB-lease");
+        var first = Session(both.Dir, both.ArgsA, token);
+        var second = Session(both.Dir, both.ArgsB, token);
+        var results = await Task.WhenAll(first, second);
+        bool serialized = results[0].End <= results[1].Start || results[1].End <= results[0].Start;
+        bool compiled = results.All(r => r.Run.Kind == 0 && r.Run.ExitCode == 0) && serialized && !results.Any(r => Output(r.Run).Contains("C1041"));
+        Check(compiled, "concurrent-aliased-sessions-serialize-and-both-compile" + (compiled ? "" : ":" + string.Join(" | ", results.Select(r => r.Run.ExitCode + " " + Output(r.Run).Trim()))));
+        string objects = string.Join(' ', Enumerable.Range(0, 4).SelectMany(k => new[] { "a" + k + ".obj", "b" + k + ".obj" }));
+        Execution link = Native.RunInitiator(Path.Combine(Path.GetDirectoryName(compiler)!, "link.exe"), both.Dir,
+            "/nologo /dll /noentry /nodefaultlib /debug /pdb:linked.pdb /out:linked.dll " + objects, 60, token);
+        bool linked = link.Kind == 0 && link.ExitCode == 0 && !Output(link).Contains("LNK4099");
+        Check(linked, "serialized-shared-PDB-links-objects-from-both-sessions" + (linked ? "" : ":" + Output(link).Trim()));
+
+        var holderCancel = Fixture("cancel-holder");
+        using (var cancelHolder = CancellationTokenSource.CreateLinkedTokenSource(token))
+        {
+            var holderAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var holder = Session(holderCancel.Dir, holderCancel.ArgsA, cancelHolder.Token, holderAcquired);
+            await holderAcquired.Task.WaitAsync(token);
+            var waiter = Session(holderCancel.Dir, holderCancel.ArgsB, token);
+            await Task.Delay(300, token);
+            bool waited = !waiter.IsCompleted;
+            cancelHolder.Cancel();
+            var cancelled = await holder;
+            var finished = await waiter;
+            bool recovered = waited && cancelled.Run.Kind == 2 && finished.Run.Kind == 0 && finished.Run.ExitCode == 0 && finished.Start >= cancelled.End;
+            Check(recovered, "cancelled-PDB-owner-releases-lease-and-waiter-compiles" + (recovered ? "" : ":" + finished.Run.ExitCode + " " + Output(finished.Run).Trim()));
+        }
+
+        var waiterCancel = Fixture("cancel-waiter");
+        var ownerAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var owner = Session(waiterCancel.Dir, waiterCancel.ArgsA, token, ownerAcquired);
+        await ownerAcquired.Task.WaitAsync(token);
+        using (var cancelWaiter = CancellationTokenSource.CreateLinkedTokenSource(token))
+        {
+            var queued = Session(waiterCancel.Dir, waiterCancel.ArgsB, cancelWaiter.Token);
+            await Task.Delay(300, token);
+            bool waiting = !queued.IsCompleted;
+            cancelWaiter.Cancel();
+            bool waiterCancelled = false;
+            try { await queued; } catch (OperationCanceledException) { waiterCancelled = true; }
+            var completed = await owner;
+            using var next = await scheduler.Acquire(true, "after cancelled waiter", token, Pdb(waiterCancel.Dir, waiterCancel.ArgsB), 1, 1024).WaitAsync(TimeSpan.FromSeconds(10), token);
+            Check(waiting && waiterCancelled && completed.Run.Kind == 0 && completed.Run.ExitCode == 0 && next.IsLocal,
+                "cancelled-PDB-waiter-leaves-owner-and-lease-usable");
+        }
     }
 
     private static async Task PdbIsolationContracts(string compiler, string child, string directory, CancellationToken token)
