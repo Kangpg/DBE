@@ -19,23 +19,23 @@
     },
     {
       "file": "CHANGELOG.md",
-      "bytes": 15345,
-      "sha256": "832966b57f5838c33afa13ef917af534c92ef918e92f099a8b897df989022ca1"
+      "bytes": 16876,
+      "sha256": "59c74039991e8dcfbd545fd00a0cf6f20aa62e15a1b4cbe4a5a20b6d563f0c4e"
     },
     {
       "file": "README.md",
       "bytes": 2929,
-      "sha256": "3909f51729fd87263cc505fed2e11544d88f70523204f00ea1e5d10ff69858be"
+      "sha256": "95080191f359739ab47a0775c45cf0bf70fc7cbe2c78a728c154942b29f1d2c9"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 20115,
-      "sha256": "a022294c487750e46b3dfa5a795c2440af753a12f2a8d0ae957c006e4c0c6aa3"
+      "bytes": 20315,
+      "sha256": "f1046890027bc05d586d580c0e2ba8c9424003a15f4ceb1ab92bc15cc0d7ad4a"
     },
     {
       "file": "VERSION",
       "bytes": 6,
-      "sha256": "511a100eedfb9ea66441e5d506392dba2d8aa290f98c4c544c70ae75ec3c3396"
+      "sha256": "a0dc8325e2fbe558e09bf7d61260ca378151b0a3f875dd8b46ecd3693e34c10b"
     },
     {
       "file": "docs/benchmark.md",
@@ -44,8 +44,8 @@
     },
     {
       "file": "docs/connection.md",
-      "bytes": 7753,
-      "sha256": "edb46d4856302854d868968d67503c9a7a117167245a6d0c4065b9fce1c53024"
+      "bytes": 7787,
+      "sha256": "bf34ce2812cad4c3e93dec40fc056f95e2ce491bde01bfce324c0b5e29fb1428"
     },
     {
       "file": "docs/design.md",
@@ -59,8 +59,8 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 12043,
-      "sha256": "5a7259755b5dd34c838e128f37a0e72b0884a06a4c141d4115a1aad684304976"
+      "bytes": 12341,
+      "sha256": "970da48437f6182b583f3d0d21bdd08c6aa5e5846539daa7c4cfff7ad6462e72"
     },
     {
       "file": "docs/native-pch.md",
@@ -244,13 +244,13 @@
     },
     {
       "file": "scripts/Package-Worker.ps1",
-      "bytes": 3466,
-      "sha256": "88df08c74b75110282ad05309b35be595fbf372d0b9665cc3e15dd213bb4b34e"
+      "bytes": 3453,
+      "sha256": "cd009e1bb19887898ba1907c63287d7196c37af6bb92a93fe8817bd50c13e0c9"
     },
     {
       "file": "scripts/Package-WorkerUpgrade.ps1",
-      "bytes": 5307,
-      "sha256": "089af00644532989c124365f1cdd6ffc8a37e84b28fcefc4f68bb1f7d590496b"
+      "bytes": 5521,
+      "sha256": "23ee612402fc970b13ae15d20df48cf3cfe10e8e0996666c46f4bdb5167ec92e"
     },
     {
       "file": "scripts/Register-Requester.cmd",
@@ -289,8 +289,8 @@
     },
     {
       "file": "scripts/Test-ConnectionRecovery.ps1",
-      "bytes": 16073,
-      "sha256": "39c6209975aa862213c7c3d51af61ca2a0123c1c400f16d5391b149dad095d79"
+      "bytes": 17529,
+      "sha256": "c2ac96bc61bb9b91caa6160c8e3f95441cfd082ce773ed3d9816cfdd4a3434b4"
     },
     {
       "file": "scripts/Test-HybridIncremental.ps1",
@@ -349,8 +349,8 @@
     },
     {
       "file": "scripts/Test-WorkerPackage.ps1",
-      "bytes": 4482,
-      "sha256": "abd5cb301218469e69272a26155b73d5bb6e61f6b68b3e001bcb5f0d628e29e8"
+      "bytes": 4692,
+      "sha256": "bb19b875837605fd92a445f007bda3225f1bcf17c7ead25776855a905d4341f2"
     },
     {
       "file": "scripts/Test-WorkerStateRecovery.ps1",
@@ -366,6 +366,11 @@
       "file": "scripts/Toolchain.ps1",
       "bytes": 1268,
       "sha256": "2ec8146ae48e80854da5dc856fa3a5735007e5995df14f7813e7e959f8167cfb"
+    },
+    {
+      "file": "scripts/WorkerRuntime.ps1",
+      "bytes": 1366,
+      "sha256": "0f84dd5451a702228fe59f0846be8fbc8ac5287eea888a3096654f03f41133bf"
     },
     {
       "file": "scripts/summarize-build-timing.py",
@@ -395,7 +400,7 @@
     {
       "file": "vsix/AssemblyInfo.cs",
       "bytes": 179,
-      "sha256": "7e96203f4861fed932f4f39d4838809a8a144fb564bd9fec179f37a2b302866e"
+      "sha256": "1476690752b9f270e0b4414599d01d67511ab0f27144a8a5aba43232d0870815"
     },
     {
       "file": "vsix/Commands.vsct",
@@ -440,7 +445,7 @@
     {
       "file": "vsix/source.extension.vsixmanifest",
       "bytes": 1179,
-      "sha256": "9faae48d9d3f9df799a09c1737d7a2bf5c9897c00ea1781fbf1fc9849c694586"
+      "sha256": "4626a48127e18c8ff416c138233c7ff3490ef043bee588cc65741898e20defb0"
     },
     {
       "file": "worker/BuildCancellation.cs",

@@ -110,6 +110,22 @@ if($PackagePublishDirectory){
     Move-Item -LiteralPath $oldOutput -Destination $retainedOutput
     $version=& $package.ClientExecutable --version
     Check (!(Test-Path $oldOutput) -and $version -and (Test-Path $package.ClientConfig) -and (Test-Path $package.WorkerConfig) -and (Test-Path $package.DeploymentFile)) 'installed-client-and-deployment-survive-artifact-directory-removal'
+    # A framework-dependent runtime cannot start on a Worker without .NET: both producers must refuse it before writing.
+    $frameworkRuntime=$publish
+    if((Get-Content (Join-Path $publish 'dbe-worker.runtimeconfig.json') -Raw|ConvertFrom-Json).runtimeOptions.PSObject.Properties.Name -contains 'includedFrameworks'){
+        throw 'PublishDirectory must be the framework-dependent build so the self-contained refusal is tested against a real runtime'
+    }
+    foreach($producer in @('upgrade','package')){
+        $refusedData=Join-Path $data "refused-framework-$producer";$refusedOutput=Join-Path $run "refused-framework-$producer"
+        try {
+            if($producer -eq 'upgrade'){& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -DeploymentFile $package.DeploymentFile -PublishDirectory $frameworkRuntime -ConnectionDirectory $refusedData -OutputDirectory $refusedOutput|Out-Null}
+            else {& (Join-Path $PSScriptRoot 'Package-Worker.ps1') -PublishDirectory $frameworkRuntime -WorkerAddress '127.0.0.1' -Compiler $Compiler -ConnectionDirectory $refusedData -OutputDirectory $refusedOutput|Out-Null}
+            throw "Accepted framework-dependent runtime for $producer"
+        } catch {
+            if($_.Exception.Message -notlike '*separately installed .NET*'){throw}
+            Check (!(Test-Path $refusedData) -and !(Test-Path $refusedOutput)) "$producer-refuses-framework-dependent-runtime-before-writing"
+        }
+    }
     $installed=Join-Path $run 'installed-worker';Expand-Archive -LiteralPath (Join-Path $retainedOutput 'dbe-worker-win-x64.zip') -DestinationPath $installed
     try {& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -DeploymentFile $package.DeploymentFile -PublishDirectory $PackagePublishDirectory -Compiler $Compiler -ConnectionDirectory (Join-Path $data 'refused-compiler') -OutputDirectory (Join-Path $run 'refused-compiler')|Out-Null;throw 'Accepted compiler selection change'}
     catch {if($_.Exception.Message -notlike '*does not use a bundled toolchain*'){throw}

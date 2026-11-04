@@ -10,6 +10,9 @@ param([Parameter(Mandatory,ParameterSetName='Deployment')][string]$DeploymentFil
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'ConnectionFiles.ps1')
+. (Join-Path $PSScriptRoot 'WorkerRuntime.ps1')
+# Reject a runtime the Worker PC cannot start before writing any connection data or package files.
+$PublishDirectory=Assert-DbeSelfContainedPublish $PublishDirectory
 $installedConfig=$null;$oldClient=$null
 if($PSCmdlet.ParameterSetName -eq 'Deployment'){
     $old=Read-DbeConnectionJson ([IO.Path]::GetFullPath($DeploymentFile))

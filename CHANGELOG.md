@@ -1,5 +1,14 @@
 # 릴리스 노트
 
+## 0.3.3 · 2026-11-04
+
+0.3.2 배포 전 검토에서 재현된 업그레이드 결함을 수정한다. 속도 측정 결과는 추가하지 않는다.
+
+- `Package-WorkerUpgrade.ps1`이 framework-dependent runtime으로도 업그레이드 ZIP을 만들던 문제를 수정했다. 기존 Worker 사본에 적용하면 .NET 10을 찾지 못해 시작하지 못했다. 0.3.2에서 업그레이드 생산자를 다시 작성하며 초기 패키지의 self-contained 검사를 옮기지 않은 것이 원인이다.
+- 배포 가능한 Worker runtime 판단을 `WorkerRuntime.ps1`의 공용 검사 하나로 옮겼다. `dbe-worker.runtimeconfig.json`을 해석해 `includedFrameworks`만 있는 self-contained 구성을 요구하고 `coreclr.dll`·`dbe-process.dll`도 확인한다. 초기 패키지와 업그레이드 모두 연결 데이터·산출물을 쓰기 전에 거부한다. 기존 초기 패키지의 `coreclr.dll` 존재 검사는 이 검사로 대체했다.
+- `Test-WorkerPackage.ps1`은 ZIP 자체에 runtime이 있는지 확인한다. 설치된 Worker 사본 위 검증에서 기존 runtime 파일이 누락을 가리지 않는다.
+- 검증: 0.3.3 framework/self-contained 빌드와 PowerShell 7.4.6으로 `Test-ConnectionRecovery.ps1` 33개 검사를 통과했다. 두 생산자가 실제 framework-dependent 빌드를 쓰기 전에 거부하는 검사를 추가했으며 `-PublishDirectory`는 framework-dependent 빌드여야 한다. 물리 Worker 업그레이드와 현재 프로젝트 성능 비교는 남아 있다.
+
 ## 0.3.2 · 2026-11-04
 
 0.3.1 연결 복구 검토에서 찾은 두 생산 경계를 수정한다. 속도 측정 결과는 추가하지 않는다.

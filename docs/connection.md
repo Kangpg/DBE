@@ -81,7 +81,7 @@ $client = .\scripts\Import-WorkerConnection.ps1 `
 복구한 Worker도 runtime-only 업그레이드를 사용한다. 등록한 client 설정을 그대로 지정하면 Worker의 `worker.json`을 덮어쓰지 않으므로 등록한 requester pin이 이전 값으로 돌아가지 않는다:
 
 ```powershell
-$upgrade = .\scripts\Package-WorkerUpgrade.ps1 -ClientConfig $client.ClientConfig -PublishDirectory $build.Directory
+$upgrade = .\scripts\Package-WorkerUpgrade.ps1 -ClientConfig $client.ClientConfig -PublishDirectory $build.Directory # Build-Worker.ps1 -SelfContained
 $upgrade.WorkerZip      # 기존 Worker 폴더에 덮어 푼다
 $upgrade.DeploymentFile # 다음 업그레이드의 -DeploymentFile
 ```

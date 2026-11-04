@@ -10,6 +10,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($deployment.WorkerZip)
 try { $entries = @($archive.Entries | ForEach-Object { $_.FullName }) } finally { $archive.Dispose() }
 if ($entries -contains 'client.json') { throw 'Client configuration leaked into Worker ZIP.' }
+# Check the archive itself: an overlay copy can otherwise hide a missing runtime behind installed files.
+if ($entries -notcontains 'coreclr.dll') { throw 'Worker ZIP does not carry a self-contained runtime.' }
 if ($InstalledWorkerDirectory) {
     # Runtime-only upgrade: the Worker keeps its own identity and config; apply over a copy.
     if (@($entries | Where-Object { $_ -in @('identity.pfx','worker.json') }).Count) { throw 'Upgrade ZIP carries Worker-owned identity or config.' }

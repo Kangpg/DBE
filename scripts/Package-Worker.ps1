@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'ConnectionFiles.ps1')
+. (Join-Path $PSScriptRoot 'WorkerRuntime.ps1')
 $pair=Get-DbePersistentConnectionDirectory $ConnectionDirectory
 if(Test-Path -LiteralPath $pair){throw 'Connection destination must be new'}
 if(!$OutputDirectory){$OutputDirectory=Join-Path $root ('out/worker-package-'+[Guid]::NewGuid().ToString('N'))}
@@ -12,7 +13,7 @@ $output=[IO.Path]::GetFullPath($OutputDirectory);Assert-DbePlainConnectionPath $
 Assert-DbeSeparateConnectionOutput $pair $output
 if(Test-Path -LiteralPath $output){throw 'Package output must be new'}
 if (!$PublishDirectory) { $PublishDirectory = (& (Join-Path $PSScriptRoot 'Build-Worker.ps1') -SelfContained).Directory }
-if (!(Test-Path -LiteralPath (Join-Path $PublishDirectory 'coreclr.dll'))) { throw 'Package requires a self-contained publish.' }
+$PublishDirectory = Assert-DbeSelfContainedPublish $PublishDirectory
 # Resolve the caller's installed toolchain when no compiler is selected.
 if(!$Compiler){
     . (Join-Path $PSScriptRoot 'Toolchain.ps1')
