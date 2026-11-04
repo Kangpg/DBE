@@ -1,5 +1,14 @@
 # 릴리스 노트
 
+## 0.3.4 · 2026-11-04
+
+배포 등록 CMD의 기본 경로 해석을 수정한다.
+
+- Worker에서 `Register-Requester.cmd`를 실행하면 Windows PowerShell 5.1의 parameter 기본값 평가 시 `$PSScriptRoot`가 빈 값이어서 requester 경로를 찾지 못했다. 경로 인자를 생략한 경우에만 script 본문에서 기본 위치를 해석하며 명시 입력은 보존한다.
+- 기존 검증은 두 경로를 명시해 실제 배포 진입점 오류를 놓쳤다. 공개 bundle을 설치본에 풀고 다른 작업 폴더에서 CMD와 인자 없는 PowerShell script를 실행하는 회귀를 추가했다. 기존 설정의 멱등 보존을 함께 확인한다.
+- 패키지 검증기가 절대 인증서 경로 앞에 다른 드라이브 경로를 붙이던 문제도 경로 소유 경계의 .NET 결합으로 수정했다. 원래 client 설정을 보존하면서 실제 TLS/컴파일로 확인했다.
+- 0.3.4 framework/self-contained 빌드로 35개 회귀를 통과했다. 공개 등록 파일과 runtime을 묶은 ZIP을 설치본 사본에 덮고 실제 CMD 등록·mutual TLS·MSVC 컴파일도 확인했다. 0.3.3의 self-contained 배포 검사와 Worker 인증서·설정·toolchain 보존 규칙을 유지한다. 물리 Worker 등록·업데이트와 현재 프로젝트 성능 비교는 별도다.
+
 ## 0.3.3 · 2026-11-04
 
 0.3.2 배포 전 검토에서 재현된 업그레이드 결함을 수정한다. 속도 측정 결과는 추가하지 않는다.

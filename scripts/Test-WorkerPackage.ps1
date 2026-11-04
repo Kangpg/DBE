@@ -43,7 +43,7 @@ try {
     $port = [int]($startup.detail.Split(':')[-1])
     $client = Get-Content -Raw -LiteralPath $deployment.ClientConfig | ConvertFrom-Json
     $client.Host = '127.0.0.1'; $client.Port = $port
-    $client.Certificate = Join-Path (Split-Path $deployment.ClientConfig -Parent) $client.Certificate
+    $client.Certificate = [IO.Path]::GetFullPath([IO.Path]::Combine((Split-Path $deployment.ClientConfig -Parent),[string]$client.Certificate))
     $clientConfig = Join-Path $run 'client-loopback.json'
     $client | ConvertTo-Json | Set-Content -LiteralPath $clientConfig -Encoding UTF8
     & $deployment.ClientExecutable info $clientConfig *> (Join-Path $run 'info.json')

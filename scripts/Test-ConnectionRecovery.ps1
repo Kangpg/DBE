@@ -60,6 +60,15 @@ foreach($index in 1..2){
     $unchangedHash=(Get-FileHash $configPath).Hash
     $repeat=Register $worker
     Check (!$repeat.Changed -and (Get-FileHash $configPath).Hash -ceq $unchangedHash -and @(Get-ChildItem $worker -Filter 'worker.json.backup-*').Count -eq 1 -and !$repeat.ConnectionBackup) "worker-$index-registration-is-idempotent"
+    if($index -eq 1){
+        # Exercise the delivered entry points with omitted paths, from another cwd.
+        Copy-Item -Path (Join-Path $bundle.BundleDirectory '*') -Destination $worker
+        $inputFile=Join-Path $run 'cmd-input.txt';[IO.File]::WriteAllText($inputFile,"`r`n",[Text.ASCIIEncoding]::new())
+        $cmdLine='""'+(Join-Path $worker 'Register-Requester.cmd')+'" < "'+$inputFile+'""'
+        $cmdCode=Native {& $env:ComSpec /d /s /c $cmdLine} (Join-Path $run 'delivered-cmd.log')
+        $scriptCode=Native {& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $worker 'Register-Requester.ps1')} (Join-Path $run 'default-script.log')
+        Check ($cmdCode -eq 0 -and $scriptCode -eq 0 -and (Get-FileHash $configPath).Hash -ceq $unchangedHash) 'delivered-registration-CMD-and-script-resolve-omitted-paths-on-Windows-PowerShell'
+    }
     # A stale derived export must not leave registration permanently failing after the config commit.
     $exportBytes=[IO.File]::ReadAllBytes($registration.ConnectionFile)
     $stale=Get-Content $registration.ConnectionFile -Raw|ConvertFrom-Json;$stale.port=1;$stale|ConvertTo-Json|Set-Content $registration.ConnectionFile
@@ -140,8 +149,16 @@ if($PackagePublishDirectory){
     try {& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -ClientConfig $recoveredClient -PublishDirectory $PackagePublishDirectory -Compiler $Compiler -ConnectionDirectory (Join-Path $data 'refused-recovered-compiler') -OutputDirectory (Join-Path $run 'refused-recovered-compiler')|Out-Null;throw 'Accepted compiler change for unknown config'}
     catch {if($_.Exception.Message -notlike 'Compiler replacement requires a deployment record*'){throw};Check $true 'recovered-upgrade-refuses-compiler-change-for-unknown-worker-config'}
     $recoveredUpgrade=& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -ClientConfig $recoveredClient -PublishDirectory $PackagePublishDirectory -ConnectionDirectory (Join-Path $data 'recovered-upgrade') -OutputDirectory (Join-Path $run 'recovered-upgrade-output')
-    & (Join-Path $PSScriptRoot 'Test-WorkerPackage.ps1') -DeploymentFile $recoveredUpgrade.DeploymentFile -InstalledWorkerDirectory $recoveredWorker *> (Join-Path $run 'recovered-upgrade-verification.log')
+    $originalClientHash=(Get-FileHash $recoveredClient).Hash
+    $absoluteClient=Get-Content $recoveredClient -Raw|ConvertFrom-Json
+    $absoluteClient.certificate=[IO.Path]::GetFullPath([IO.Path]::Combine((Split-Path $recoveredClient -Parent),[string]$absoluteClient.certificate))
+    $absoluteClientPath=Join-Path $run 'absolute-client.json';$absoluteClient|ConvertTo-Json|Set-Content $absoluteClientPath
+    $verifyDeployment=Join-Path $run 'absolute-client-deployment.json'
+    [ordered]@{WorkerZip=$recoveredUpgrade.WorkerZip;ClientConfig=$absoluteClientPath;ClientExecutable=$recoveredUpgrade.ClientExecutable}|ConvertTo-Json|Set-Content $verifyDeployment
+    & (Join-Path $PSScriptRoot 'Test-WorkerPackage.ps1') -DeploymentFile $verifyDeployment -InstalledWorkerDirectory $recoveredWorker *> (Join-Path $run 'recovered-upgrade-verification.log')
     if(!$?){throw 'Recovered upgrade verification failed'}
+    $verification=Get-Content (Join-Path $run 'recovered-upgrade-verification.log') -Raw|ConvertFrom-Json
+    Check ($verification.Status -ceq 'passed' -and (Get-FileHash $recoveredClient).Hash -ceq $originalClientHash) 'recovered-upgrade-verification-preserves-absolute-certificate-paths-and-original-config'
     $second=& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -DeploymentFile $recoveredUpgrade.DeploymentFile -PublishDirectory $PackagePublishDirectory -ConnectionDirectory (Join-Path $data 'recovered-upgrade-2') -OutputDirectory (Join-Path $run 'recovered-upgrade-output-2')
     $recoveredFull=[IO.Path]::GetFullPath($recoveredClient)
     Check ([IO.Path]::GetFullPath($recoveredUpgrade.ClientConfig) -ieq $recoveredFull -and [IO.Path]::GetFullPath($second.ClientConfig) -ieq $recoveredFull -and !$recoveredUpgrade.WorkerConfig -and

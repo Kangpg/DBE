@@ -1,6 +1,10 @@
 [CmdletBinding()]
-param([string]$WorkerDirectory=$PSScriptRoot,[string]$RequesterDirectory=$PSScriptRoot)
+param([string]$WorkerDirectory,[string]$RequesterDirectory)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+# Windows PowerShell 5.1 has not initialized PSScriptRoot while binding parameter
+# defaults. Resolve omitted paths in the script body; preserve explicit inputs.
+if(!$PSBoundParameters.ContainsKey('WorkerDirectory')){$WorkerDirectory=$PSScriptRoot}
+if(!$PSBoundParameters.ContainsKey('RequesterDirectory')){$RequesterDirectory=$PSScriptRoot}
 . (Join-Path $PSScriptRoot 'ConnectionFiles.ps1')
 $root=(Resolve-Path -LiteralPath $WorkerDirectory).ProviderPath;Assert-DbePlainConnectionPath $root
 $profile=Read-DbeRequester ((Resolve-Path -LiteralPath $RequesterDirectory).ProviderPath)

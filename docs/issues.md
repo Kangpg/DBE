@@ -98,3 +98,8 @@ DBE-003/006: 0.3.0의 PDB 배치와 native admission 성능 비교는 인증 연
 DBE-008: 업그레이드가 요청 PC의 설치 시점 `worker.json`을 재배포해 Worker에서 교체한 requester pin을 되돌릴 수 있었고, 복구 Worker는 업그레이드 경로가 없었다. Worker 인증서·설정·toolchain의 소유자를 Worker 폴더로 두고 업그레이드를 runtime-only로 바꿨다. 등록 export는 파생 파일로 다뤄 재시도가 수렴한다. 합성 31개 검사를 통과했고 물리 Worker 적용은 열린 항목이다.
 
 0.3.3: 업그레이드가 framework-dependent runtime을 받아 .NET 없는 Worker에서 시작 실패하던 결함을 수정했다. 초기 패키지와 업그레이드가 runtimeconfig 기반 공용 self-contained 검사를 파일 생성 전에 적용한다. 합성 33개 검사를 통과했다.
+
+
+## 0.3.4 배포 등록 진입점 수정
+
+DBE-008: 실제 배포 CMD 실행에서 Windows PowerShell 5.1의 `$PSScriptRoot` parameter 기본값이 빈 경로로 바인딩되는 문제를 재현했다. 생략된 경로는 본문에서 해석하고, 설치본에 공개 bundle을 배치해 CMD와 인자 없는 script 실행을 검증한다. 명시 경로 테스트의 성공을 실제 배포 버튼 성공으로 해석하지 않는다. 물리 Worker 적용은 후속 확인이다.

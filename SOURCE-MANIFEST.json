@@ -19,23 +19,23 @@
     },
     {
       "file": "CHANGELOG.md",
-      "bytes": 16876,
-      "sha256": "59c74039991e8dcfbd545fd00a0cf6f20aa62e15a1b4cbe4a5a20b6d563f0c4e"
+      "bytes": 18201,
+      "sha256": "cab1593162adefbf3c484b50b03d794192f8a885ffeb7b25aca26eab19499434"
     },
     {
       "file": "README.md",
       "bytes": 2929,
-      "sha256": "95080191f359739ab47a0775c45cf0bf70fc7cbe2c78a728c154942b29f1d2c9"
+      "sha256": "3b2ec15af2181b204fcf1bbfc7872532c1da1b1e2d06b21d703e592c571d7d65"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 20315,
-      "sha256": "f1046890027bc05d586d580c0e2ba8c9424003a15f4ceb1ab92bc15cc0d7ad4a"
+      "bytes": 21021,
+      "sha256": "2d2742a713d27f07f7d0d3e66ecfc91ec0dfd20bfffbfdb3682df1a303d25778"
     },
     {
       "file": "VERSION",
       "bytes": 6,
-      "sha256": "a0dc8325e2fbe558e09bf7d61260ca378151b0a3f875dd8b46ecd3693e34c10b"
+      "sha256": "027a61167f091a427fa7844dcac0c5141bafbcbdcadc7e04a93578147ab956f2"
     },
     {
       "file": "docs/benchmark.md",
@@ -59,8 +59,8 @@
     },
     {
       "file": "docs/issues.md",
-      "bytes": 12341,
-      "sha256": "970da48437f6182b583f3d0d21bdd08c6aa5e5846539daa7c4cfff7ad6462e72"
+      "bytes": 12822,
+      "sha256": "5d14cc99b1b08ead8dcf74ad77b24bccbd33b358647a6699371eaa267ca4b9ab"
     },
     {
       "file": "docs/native-pch.md",
@@ -259,8 +259,8 @@
     },
     {
       "file": "scripts/Register-Requester.ps1",
-      "bytes": 4233,
-      "sha256": "158ff0d556eae33bd8dc2e1c090c385e006910c4f10d2ca63a9fb51b90b14f91"
+      "bytes": 4547,
+      "sha256": "b73248a12aef470b395e02694cd1402aac5aa1ea938e69e252515171643c0753"
     },
     {
       "file": "scripts/Repair-WorkerState.cmd",
@@ -289,8 +289,8 @@
     },
     {
       "file": "scripts/Test-ConnectionRecovery.ps1",
-      "bytes": 17529,
-      "sha256": "c2ac96bc61bb9b91caa6160c8e3f95441cfd082ce773ed3d9816cfdd4a3434b4"
+      "bytes": 19356,
+      "sha256": "653e959efdb7a7dbfa433112c8e0f5556fbb81466f0f958fb2b7ae85f95fb7ad"
     },
     {
       "file": "scripts/Test-HybridIncremental.ps1",
@@ -349,8 +349,8 @@
     },
     {
       "file": "scripts/Test-WorkerPackage.ps1",
-      "bytes": 4692,
-      "sha256": "bb19b875837605fd92a445f007bda3225f1bcf17c7ead25776855a905d4341f2"
+      "bytes": 4734,
+      "sha256": "b6fe9ee7c784babe09d90495f51c7c50929762af02291dacae04d250ed543b86"
     },
     {
       "file": "scripts/Test-WorkerStateRecovery.ps1",
@@ -400,7 +400,7 @@
     {
       "file": "vsix/AssemblyInfo.cs",
       "bytes": 179,
-      "sha256": "1476690752b9f270e0b4414599d01d67511ab0f27144a8a5aba43232d0870815"
+      "sha256": "ac030ed11363c7d5d5f46c114dc51f20901025f49159fca1dec55bb448b4c06d"
     },
     {
       "file": "vsix/Commands.vsct",
@@ -445,7 +445,7 @@
     {
       "file": "vsix/source.extension.vsixmanifest",
       "bytes": 1179,
-      "sha256": "4626a48127e18c8ff416c138233c7ff3490ef043bee588cc65741898e20defb0"
+      "sha256": "5983accab182b40ea99864d3bc7fcb904c96c352094538624e8907c41b121a5f"
     },
     {
       "file": "worker/BuildCancellation.cs",
