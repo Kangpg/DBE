@@ -1,4 +1,5 @@
 #include "process-support.h"
+#include "compiler-environment.h"
 #include <algorithm>
 #include <cstring>
 #include <string>
@@ -69,6 +70,8 @@ void execute(const wchar_t* exe, const wchar_t* cwd, const wchar_t* args, const 
     }
     std::wstring command = L"\"" + std::wstring(exe) + L"\" " + args;
     if (command.size() >= 32767) { result.error = ERROR_FILENAME_EXCED_RANGE; return; }
+    std::vector<wchar_t> privateEnvironment;
+    if (!dbe::compilerEnvironment(environment, privateEnvironment)) { failure(); return; }
     STARTUPINFOEXW startup{}; startup.StartupInfo.cb = sizeof(startup);
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
     startup.StartupInfo.hStdInput = input.get();
@@ -79,7 +82,7 @@ void execute(const wchar_t* exe, const wchar_t* cwd, const wchar_t* args, const 
     if (!CreateProcessW(exe, command.data(), nullptr, nullptr, TRUE,
         EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW |
             (initiator ? NORMAL_PRIORITY_CLASS : BELOW_NORMAL_PRIORITY_CLASS),
-        const_cast<wchar_t*>(environment), cwd, &startup.StartupInfo, &child)) { failure(); return; }
+        privateEnvironment.data(), cwd, &startup.StartupInfo, &child)) { failure(); return; }
     dbe::Handle process(child.hProcess), thread(child.hThread);
     result.processId = child.dwProcessId;
     owner.outWrite.close(); owner.errWrite.close();

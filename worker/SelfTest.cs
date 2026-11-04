@@ -145,6 +145,7 @@ static class SelfTest
                 Check(cancelled.Status == "cancelled" && cancelled.Output is null, "wire-cancellation-reaches-native-owner");
             }
             await NativeContracts(childProbe, directory, token);
+            await PdbIsolationContracts(compilerPath, childProbe, directory, token);
         }
         finally { worker.Stop(); await server; }
         File.WriteAllText(Path.Combine(directory, "checks.json"), JsonSerializer.Serialize(new { checks, scope = "real local TLS loopback and real installed MSVC; two-machine run still required" }, Wire.Json));
@@ -295,6 +296,62 @@ static class SelfTest
             throw new Exception("Object verifier lost debug symbols");
         Execution run = Native.Run(Path.Combine(directory, "verify.exe"), directory, "", 5, 256, CancellationToken.None);
         if (run.Kind != 0 || run.ExitCode != 0) throw new Exception("Returned object had incorrect behavior");
+    }
+
+    private static async Task PdbIsolationContracts(string compiler, string child, string directory, CancellationToken token)
+    {
+        string root = Directory.CreateDirectory(Path.Combine(directory, "pdb-isolation")).FullName;
+        string[] dirs = Enumerable.Range(0, 2).Select(i => Directory.CreateDirectory(Path.Combine(root, i.ToString())).FullName).ToArray();
+        foreach (string dir in dirs)
+        {
+            File.WriteAllText(Path.Combine(dir, "first0.cpp"), "extern \"C\" int value(){return 41;}");
+            File.WriteAllText(Path.Combine(dir, "first1.cpp"), "struct PdbFixture{int member;}; PdbFixture fixture{42};");
+            File.WriteAllText(Path.Combine(dir, "second0.cpp"), "extern \"C\" int value(); extern \"C\" int entry(){return value()==41?0:1;}");
+            File.WriteAllText(Path.Combine(dir, "second1.cpp"), "extern \"C\" int another(){return 43;}");
+        }
+        using var cancelA = CancellationTokenSource.CreateLinkedTokenSource(token);
+        using var cancelB = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task<Execution> Start(int i, CancellationToken cancel) => Task.Run(() => Native.RunInitiator(child, dirs[i],
+            "--pdb-session \"" + compiler + "\" \"" + Path.Combine(dirs[i], "ready") + "\" \"" + Path.Combine(dirs[i], "release") + "\"", 45, cancel));
+        // A test-owned common endpoint makes the old shared-service failure
+        // reproducible without connecting to a user's ambient PDB broker.
+        string? previous = Environment.GetEnvironmentVariable("_MSPDBSRV_ENDPOINT_");
+        Task<Execution>? a = null, b = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("_MSPDBSRV_ENDPOINT_", "DBE.Test." + Guid.NewGuid().ToString("N"));
+            a = Start(0, cancelA.Token);
+            await Eventually(() => File.Exists(Path.Combine(dirs[0], "ready")), token);
+            b = Start(1, cancelB.Token);
+            await Eventually(() => File.Exists(Path.Combine(dirs[1], "ready")), token);
+            string[][] markers = dirs.Select(dir => File.ReadAllLines(Path.Combine(dir, "ready"))).ToArray();
+            Check(markers[0][1] != markers[1][1] && markers.All(m => m[1].Length > 0), "owned-Jobs-have-distinct-PDB-service-endpoints");
+            using Process brokerA = Process.GetProcessById(int.Parse(markers[0][0].Split(' ')[0]));
+            using Process brokerB = Process.GetProcessById(int.Parse(markers[1][0].Split(' ')[0]));
+            _ = brokerA.Handle; _ = brokerB.Handle;
+            Check(brokerA.StartTime.ToUniversalTime().ToFileTimeUtc() == long.Parse(markers[0][0].Split(' ')[1]) &&
+                brokerB.StartTime.ToUniversalTime().ToFileTimeUtc() == long.Parse(markers[1][0].Split(' ')[1]) && brokerA.Id != brokerB.Id,
+                "real-Zi-MP-compilers-create-separate-owned-PDB-services");
+            cancelA.Cancel();
+            Execution cancelled = await a;
+            Check(cancelled.Kind == 2 && brokerA.WaitForExit(5000) && !brokerB.HasExited, "cancel-one-Job-joins-its-broker-and-preserves-other-broker");
+            File.WriteAllText(Path.Combine(dirs[1], "release"), "go");
+            Execution completed = await b;
+            Check(completed.Kind == 0 && completed.ExitCode == 0 && brokerB.WaitForExit(5000),
+                "other-Job-continues-Zi-MP-and-joins-its-own-broker:" + Encoding.UTF8.GetString(completed.Stdout));
+            Execution link = Native.RunInitiator(Path.Combine(Path.GetDirectoryName(compiler)!, "link.exe"), dirs[1],
+                "/nologo /nodefaultlib /debug /pdb:verify.pdb /entry:entry /subsystem:console /out:verify.exe first0.obj first1.obj second0.obj second1.obj", 10, token);
+            Execution run = Native.RunInitiator(Path.Combine(dirs[1], "verify.exe"), dirs[1], "", 5, token);
+            Check(link.Kind == 0 && link.ExitCode == 0 && !Encoding.UTF8.GetString(link.Stdout).Contains("LNK4099") &&
+                File.Exists(Path.Combine(dirs[1], "verify.pdb")) && run.Kind == 0 && run.ExitCode == 0, "surviving-Job-PDB-objects-link-and-execute");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("_MSPDBSRV_ENDPOINT_", previous);
+            cancelA.Cancel(); cancelB.Cancel();
+            if (a is not null) await a;
+            if (b is not null) await b;
+        }
     }
 
     private static async Task NativeContracts(string child, string directory, CancellationToken token)

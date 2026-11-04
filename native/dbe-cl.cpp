@@ -7,6 +7,7 @@
 #include <variant>
 #include <vector>
 #include "process-support.h"
+#include "compiler-environment.h"
 
 namespace {
 using dbe::Handle;
@@ -112,9 +113,12 @@ Result run() {
     startup.StartupInfo.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     startup.lpAttributeList = attributes.get();
     if (!SetConsoleCtrlHandler(consoleControl, TRUE)) return error("register console control handler");
+    std::vector<wchar_t> environment;
+    if (!dbe::compilerEnvironment(nullptr, environment)) return error("create compiler environment");
     PROCESS_INFORMATION child{};
     if (!CreateProcessW(compiler.c_str(), command.data(), nullptr, nullptr, TRUE,
-                        EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, &startup.StartupInfo, &child))
+                        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                        environment.data(), nullptr, &startup.StartupInfo, &child))
         return error("launch compiler");
     Handle process(child.hProcess), thread(child.hThread);
     if (WaitForSingleObject(process.get(), INFINITE) != WAIT_OBJECT_0) return error("wait for compiler");
