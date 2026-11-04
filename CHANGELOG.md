@@ -1,5 +1,15 @@
 # 릴리스 노트
 
+## 0.3.2 · 2026-11-04
+
+0.3.1 연결 복구 검토에서 찾은 두 생산 경계를 수정한다. 속도 측정 결과는 추가하지 않는다.
+
+- Worker 업그레이드는 runtime-only다. ZIP에 `identity.pfx`·`worker.json`·`start-worker.cmd`를 넣지 않고 기존 Worker 폴더에 덮어 푼다. 이전에는 요청 PC에 남은 설치 시점 `worker.json`을 다시 배포해 `Register-Requester`로 교체한 pin을 이전 값으로 되돌릴 수 있었고, 복구한 Worker는 deployment가 없어 업그레이드할 수 없었다. `-ClientConfig`로 복구한 연결을 업그레이드하며 결과 deployment로 반복 업그레이드할 수 있다. bundled toolchain은 Worker 폴더에 유지된다.
+- `-Compiler`는 설치 기록상 Worker가 이미 `toolchain\cl.exe`를 쓰는 경우에만 toolchain을 교체한다. compiler 선택 변경과 설정을 모르는 복구 Worker는 파일을 쓰기 전에 거부한다. 기존에 업그레이드로 compiler 출처를 바꾸던 흐름은 더 이상 지원하지 않는다.
+- `Register-Requester`가 Worker 설정을 바꾼 뒤 기존 공개 `connection-<id>.json` 내용이 다르면 실패하던 문제를 수정했다. 파생 파일은 백업 후 다시 만들고 `ConnectionBackup`으로 보고한다. 요청 PC의 `client.json` 등 사용자 설정은 계속 덮어쓰지 않는다.
+- `Test-WorkerPackage.ps1 -InstalledWorkerDirectory`로 설치된 Worker 사본 위 업그레이드를 검증한다. `Test-ConnectionRecovery.ps1`에 오래된 export 재생성, compiler 변경 거부, 복구 Worker 업그레이드 후 TLS·MSVC와 pin 유지, 불일치 requester의 실패 이유·설정 불변 확인을 추가했고 Windows PowerShell 5.1 host에서도 예상된 native 실패를 종료 코드로 판단한다.
+- 검증: PowerShell 7.4.6에서 합성 loopback Worker 두 대와 self-contained 패키지로 31개 검사를 통과했다(실제 mutual TLS·MSVC, 등록은 Windows PowerShell 5.1). 물리 Worker 업그레이드·재등록, 기존 0.3.1 이하 Worker 폴더 위 실제 적용과 현재 프로젝트 성능 비교는 남아 있다. 남은 검토 항목: client 호스트 변경 시 import 갱신 경로, 업그레이드마다 장기 데이터 폴더에 쌓이는 client runtime 사본 정리 정책, 테스트가 `%TEMP%`에 남기는 합성 개인 키.
+
 ## 0.3.1 · 2026-11-03
 
 연결 데이터의 수명을 빌드 산출물과 분리한다. `out` 정리로 요청 PC의 인증키가 없어지면 Worker가 켜져 있어도 TLS 연결이 끊기는 생성 경로를 수정했다.

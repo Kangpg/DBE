@@ -12,5 +12,5 @@ if($reply.version -ne 1 -or $reply.requesterId -cne $profile.requesterId -or $re
 $directory=Join-Path $root ('workers/'+$reply.workerPin);Assert-DbePlainConnectionPath $directory
 New-Item -ItemType Directory $directory -Force|Out-Null
 $path=Join-Path $directory 'client.json'
-Write-DbeConnectionJson $path ([ordered]@{host=$HostName;port=$reply.port;certificate='../../identity.pfx';workerPin=$reply.workerPin})
+Write-DbeConnectionJson $path ([ordered]@{host=$HostName;port=$reply.port;certificate='../../identity.pfx';workerPin=$reply.workerPin})|Out-Null
 [pscustomobject]@{ClientConfig=$path;WorkerPin=$reply.workerPin;HostName=$HostName}

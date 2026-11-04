@@ -78,4 +78,14 @@ $client = .\scripts\Import-WorkerConnection.ps1 `
 
 파일은 해당 requester ID·인증서 지문과 일치해야 한다. 새로운 Worker server 지문을 네트워크에서 자동 신뢰하지 않는다. 실제 인증 응답과 원격 컴파일을 확인한 뒤 새 Adapter를 만든다. 기존에 검증해 보관한 server 지문이 있다면 그대로 pin하고 실제 TLS로 확인할 수 있다. 등록은 단일 허용 요청자 키를 교체하므로 이전 요청자 키는 연결할 수 없게 된다. runtime ZIP에는 개인 키·운영 연결 설정을 넣지 않는다.
 
+복구한 Worker도 runtime-only 업그레이드를 사용한다. 등록한 client 설정을 그대로 지정하면 Worker의 `worker.json`을 덮어쓰지 않으므로 등록한 requester pin이 이전 값으로 돌아가지 않는다:
+
+```powershell
+$upgrade = .\scripts\Package-WorkerUpgrade.ps1 -ClientConfig $client.ClientConfig -PublishDirectory $build.Directory
+$upgrade.WorkerZip      # 기존 Worker 폴더에 덮어 푼다
+$upgrade.DeploymentFile # 다음 업그레이드의 -DeploymentFile
+```
+
+복구한 Worker는 요청 PC에 `worker.json` 기록이 없으므로 `-Compiler`로 bundled toolchain을 교체할 수 없다. 기존 deployment도 Worker가 이미 `toolchain\cl.exe`를 쓰는 경우에만 `-Compiler`를 허용한다. compiler 선택 변경은 Worker 설정 변경이므로 업그레이드가 대신하지 않는다. Worker 포트 등이 바뀐 뒤 `Register-Requester.cmd`를 다시 실행하면 기존 `connection-<id>.json`은 백업 후 새 값으로 다시 만든다.
+
 복구 전달 ZIP은 지워도 장기 보관한 requester 폴더에서 다시 만들 수 있다. 같은 `-ConnectionDirectory`와 새 `-BundleDirectory`를 `New-ConnectionRecovery.ps1`에 주면 인증키를 재발급하지 않는다. 인증서는 현재 pair와 동일한 30일 유효기간이다. 장기 자동 갱신은 별도 작업이다.

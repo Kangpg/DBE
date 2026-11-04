@@ -91,3 +91,8 @@ DBE-006: 새 런타임의 두 물리 Worker와 현재 프로젝트 전체/무변
 DBE-008: `out` 정리로 과거 client key/config 경로가 사라져 물리 Worker 인증 검증이 막혔다. 초기 패키지·업그레이드의 생산 경계를 수정해 요청 PC 인증·deployment·client runtime을 영구 데이터 폴더로 분리했다. 키 소실 후 공개 인증서 등록·설정 백업·멱등 import 도구를 추가했고, 두 합성 Worker의 실제 TLS/MSVC 및 원래 산출물 경로 제거 뒤 업그레이드를 검증했다. 물리 Worker 재등록과 새 머신 문서 재현은 열린 항목이다.
 
 DBE-003/006: 0.3.0의 PDB 배치와 native admission 성능 비교는 인증 연결 복구 후 이어간다. 이번 수정만으로 가속을 주장하지 않는다.
+
+
+## 0.3.2 업그레이드 소유권 수정
+
+DBE-008: 업그레이드가 요청 PC의 설치 시점 `worker.json`을 재배포해 Worker에서 교체한 requester pin을 되돌릴 수 있었고, 복구 Worker는 업그레이드 경로가 없었다. Worker 인증서·설정·toolchain의 소유자를 Worker 폴더로 두고 업그레이드를 runtime-only로 바꿨다. 등록 export는 파생 파일로 다뤄 재시도가 수렴한다. 합성 31개 검사를 통과했고 물리 Worker 적용은 열린 항목이다.

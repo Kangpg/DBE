@@ -19,23 +19,23 @@
     },
     {
       "file": "CHANGELOG.md",
-      "bytes": 13003,
-      "sha256": "d6c3cbc9a14c5bd52cf38cb651c12599e4c70aed4816d1df5050d2f0596baf7c"
+      "bytes": 15345,
+      "sha256": "832966b57f5838c33afa13ef917af534c92ef918e92f099a8b897df989022ca1"
     },
     {
       "file": "README.md",
-      "bytes": 2754,
-      "sha256": "7a89dc5b1334a67a03d51db44d57e043a0acfbea3a7705424c7cf7cfa4fa014b"
+      "bytes": 2929,
+      "sha256": "3909f51729fd87263cc505fed2e11544d88f70523204f00ea1e5d10ff69858be"
     },
     {
       "file": "Skills/dbe-development/SKILL.md",
-      "bytes": 19481,
-      "sha256": "d2c4c6fb6c1f2d73373fadc2546b3e84a4ccb6068540cabd781f6999531bda48"
+      "bytes": 20115,
+      "sha256": "a022294c487750e46b3dfa5a795c2440af753a12f2a8d0ae957c006e4c0c6aa3"
     },
     {
       "file": "VERSION",
       "bytes": 6,
-      "sha256": "79e3f22ca37c7fdf4c29ae3648d6b008c3cb6547260a453409275470919dc674"
+      "sha256": "511a100eedfb9ea66441e5d506392dba2d8aa290f98c4c544c70ae75ec3c3396"
     },
     {
       "file": "docs/benchmark.md",
@@ -44,8 +44,8 @@
     },
     {
       "file": "docs/connection.md",
-      "bytes": 6754,
-      "sha256": "a2fa3399c3ad90741168dea79c497aa0b0949e31240c81b096a42942718f1956"
+      "bytes": 7753,
+      "sha256": "edb46d4856302854d868968d67503c9a7a117167245a6d0c4065b9fce1c53024"
     },
     {
       "file": "docs/design.md",
@@ -54,13 +54,13 @@
     },
     {
       "file": "docs/installation.md",
-      "bytes": 3360,
-      "sha256": "95c2ffd10ecf557f844c825541ddd2f03a4e880dadfb2c4297a0c09c727abe62"
+      "bytes": 3586,
+      "sha256": "bf9d6f359413a596643682c92bd31c04047ffea3e63cec1d96bfc2cac2f09038"
     },
     {
       "file": "docs/issues.md",
-      "bytes": 11523,
-      "sha256": "7566d13ba5ce0faca3ec9e5d6f65a9fe9ce0a1d96073828db39b0f57b7b1fe39"
+      "bytes": 12043,
+      "sha256": "5a7259755b5dd34c838e128f37a0e72b0884a06a4c141d4115a1aad684304976"
     },
     {
       "file": "docs/native-pch.md",
@@ -79,8 +79,8 @@
     },
     {
       "file": "docs/worker-install.md",
-      "bytes": 2115,
-      "sha256": "038d38e385dcc7a70850584fd0651e13f6de4cf70415a5fabc620d5ba5017c65"
+      "bytes": 2462,
+      "sha256": "83ba0e645466818b39dadc80540054d4fa64ca56c63f081b31e003defcbb2303"
     },
     {
       "file": "fixture-remote/forced.h",
@@ -199,8 +199,8 @@
     },
     {
       "file": "scripts/ConnectionFiles.ps1",
-      "bytes": 4345,
-      "sha256": "799499a993f19545d7ac7e3ba5ec440209eae520aa463132179aba9644299d3f"
+      "bytes": 4777,
+      "sha256": "ae03e6fcdaede9770652ab3423ccf6815930a6b738e99dbeb148909063b90caf"
     },
     {
       "file": "scripts/Get-BenchmarkProfile.ps1",
@@ -214,8 +214,8 @@
     },
     {
       "file": "scripts/Import-WorkerConnection.ps1",
-      "bytes": 1232,
-      "sha256": "ffc27755e370e17c0e3e6d97ff63ba5eac7c083eeb67fde4ac2af1ccd87c5715"
+      "bytes": 1241,
+      "sha256": "7d14678a1ef78451f2cafb95aefc9a95a65ebb596bb5c54449f10342479bf271"
     },
     {
       "file": "scripts/Measure-RemoteMSBuild.ps1",
@@ -249,8 +249,8 @@
     },
     {
       "file": "scripts/Package-WorkerUpgrade.ps1",
-      "bytes": 3011,
-      "sha256": "dd4d78d98aee722a96c98125c3913df647ea62a73cba19ae88f81f35f9150190"
+      "bytes": 5307,
+      "sha256": "089af00644532989c124365f1cdd6ffc8a37e84b28fcefc4f68bb1f7d590496b"
     },
     {
       "file": "scripts/Register-Requester.cmd",
@@ -259,8 +259,8 @@
     },
     {
       "file": "scripts/Register-Requester.ps1",
-      "bytes": 3994,
-      "sha256": "82c8175facbc7c404420aae2227346c6ec524dba1e46fcc5d1bd8f73f4cbf810"
+      "bytes": 4233,
+      "sha256": "158ff0d556eae33bd8dc2e1c090c385e006910c4f10d2ca63a9fb51b90b14f91"
     },
     {
       "file": "scripts/Repair-WorkerState.cmd",
@@ -289,8 +289,8 @@
     },
     {
       "file": "scripts/Test-ConnectionRecovery.ps1",
-      "bytes": 11442,
-      "sha256": "c468c5569c99a079615146b06b7d70e863cf6b562e4b7ce58d973d99215f4a13"
+      "bytes": 16073,
+      "sha256": "39c6209975aa862213c7c3d51af61ca2a0123c1c400f16d5391b149dad095d79"
     },
     {
       "file": "scripts/Test-HybridIncremental.ps1",
@@ -349,8 +349,8 @@
     },
     {
       "file": "scripts/Test-WorkerPackage.ps1",
-      "bytes": 3670,
-      "sha256": "711272fd721d5036dfb524590d7dfe5db6308a816fd60d7fc656651aa15d57a9"
+      "bytes": 4482,
+      "sha256": "abd5cb301218469e69272a26155b73d5bb6e61f6b68b3e001bcb5f0d628e29e8"
     },
     {
       "file": "scripts/Test-WorkerStateRecovery.ps1",
@@ -395,7 +395,7 @@
     {
       "file": "vsix/AssemblyInfo.cs",
       "bytes": 179,
-      "sha256": "61215d3daa6fc8c22135974cf236526aeb0b4989a31ebaddc8ebf71b7a96c4d6"
+      "sha256": "7e96203f4861fed932f4f39d4838809a8a144fb564bd9fec179f37a2b302866e"
     },
     {
       "file": "vsix/Commands.vsct",
@@ -440,7 +440,7 @@
     {
       "file": "vsix/source.extension.vsixmanifest",
       "bytes": 1179,
-      "sha256": "4abf1f2c704a056d5a307abbb646ba281369f50dfa787eb9f5e99548b1b05003"
+      "sha256": "9faae48d9d3f9df799a09c1737d7a2bf5c9897c00ea1781fbf1fc9849c694586"
     },
     {
       "file": "worker/BuildCancellation.cs",

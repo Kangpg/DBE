@@ -41,8 +41,10 @@ try {
     }
     $export=Join-Path $root ('connection-'+$profile.requesterId+'.json')
     $connection=[ordered]@{version=1;requesterId=$profile.requesterId;requesterPin=$profile.requesterPin;workerPin=$workerPin;port=$config.port}
-    Write-DbeConnectionJson $export $connection
-    [pscustomobject]@{Changed=$changed;ConfigBackup=$backup;ConnectionFile=$export;Connection=$connection}|ConvertTo-Json -Depth 6
+    # The export is derived from the Worker config and identity committed above; a stale copy
+    # (for example after a port change) is backed up and regenerated so a retry converges.
+    $exportBackup=Write-DbeConnectionJson $export $connection -Derived
+    [pscustomobject]@{Changed=$changed;ConfigBackup=$backup;ConnectionFile=$export;ConnectionBackup=$exportBackup;Connection=$connection}|ConvertTo-Json -Depth 6
 } finally {
     if($stateLock){$stateLock.Dispose()};if($gate){$gate.Dispose()}
     if($pending -and (Test-Path -LiteralPath $pending)){Remove-Item -LiteralPath $pending}

@@ -52,14 +52,21 @@ function Read-DbeRequester([string]$Directory,[switch]$RequirePrivateKey){
     }
     return $profile
 }
-function Write-DbeConnectionJson([string]$Path,$Value){
+# Caller-owned files are never replaced. -Derived marks a file regenerated from another owner's
+# facts: a differing copy is backed up and replaced so a retry converges. Returns the backup path.
+function Write-DbeConnectionJson([string]$Path,$Value,[switch]$Derived){
     Assert-DbePlainConnectionPath $Path
     $text=($Value|ConvertTo-Json -Depth 16)
-    if(Test-Path -LiteralPath $Path){
-        if([IO.File]::ReadAllText($Path) -cne $text){throw 'Existing connection file differs; preserve it and use a new destination'}
-        return
+    $exists=Test-Path -LiteralPath $Path
+    if($exists){
+        if([IO.File]::ReadAllText($Path) -ceq $text){return $null}
+        if(!$Derived){throw 'Existing connection file differs; preserve it and use a new destination'}
     }
-    $pending=$Path+'.pending-'+[Guid]::NewGuid().ToString('N')
-    try {[IO.File]::WriteAllText($pending,$text,[Text.UTF8Encoding]::new($false));[IO.File]::Move($pending,$Path)}
-    finally {if(Test-Path -LiteralPath $pending){Remove-Item -LiteralPath $pending}}
+    $pending=$Path+'.pending-'+[Guid]::NewGuid().ToString('N');$backup=$null
+    try {
+        [IO.File]::WriteAllText($pending,$text,[Text.UTF8Encoding]::new($false))
+        if($exists){$backup=$Path+'.backup-'+[Guid]::NewGuid().ToString('N');[IO.File]::Replace($pending,$Path,$backup)}
+        else {[IO.File]::Move($pending,$Path)}
+    } finally {if(Test-Path -LiteralPath $pending){Remove-Item -LiteralPath $pending}}
+    return $backup
 }

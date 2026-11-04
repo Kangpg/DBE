@@ -10,10 +10,13 @@ $data=Join-Path ([IO.Path]::GetTempPath()) ('dbe-connection-'+$id)
 New-Item -ItemType Directory $run|Out-Null
 $checks=[Collections.Generic.List[string]]::new()
 function Check([bool]$Value,[string]$Name){if(!$Value){throw "FAIL $Name"};$checks.Add($Name)}
+# Expected native failures write stderr; Windows PowerShell 5.1 turns redirected stderr into a
+# terminating error under Stop. Keep the exit code as the result on both hosts.
+function Native([scriptblock]$Command,[string]$Output){$ErrorActionPreference='Continue';& $Command *> $Output;return $LASTEXITCODE}
 function Register([string]$Worker,[bool]$Failure=$false,[string]$Requester=$data){
     $log=Join-Path $run ('register-'+[Guid]::NewGuid().ToString('N')+'.log')
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Register-Requester.ps1') -WorkerDirectory $Worker -RequesterDirectory $Requester *> $log
-    if(($LASTEXITCODE -ne 0) -ne $Failure){Get-Content $log -Tail 8;throw 'Unexpected registration result'}
+    $code=Native {& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Register-Requester.ps1') -WorkerDirectory $Worker -RequesterDirectory $Requester} $log
+    if(($code -ne 0) -ne $Failure){Get-Content $log -Tail 8;throw 'Unexpected registration result'}
     if(!$Failure){return (Get-Content $log -Raw|ConvertFrom-Json)}
 }
 try {& (Join-Path $PSScriptRoot 'New-ConnectionRecovery.ps1') -PublishDirectory $publish -ConnectionDirectory (Join-Path $run 'unsafe') -BundleDirectory (Join-Path $run 'unsafe-bundle')|Out-Null;throw 'Accepted persistent out data'}
@@ -23,8 +26,8 @@ catch {if($_.Exception.Message -notlike 'Connection data and removable package o
 $bundle=& (Join-Path $PSScriptRoot 'New-ConnectionRecovery.ps1') -PublishDirectory $publish -ConnectionDirectory $data -BundleDirectory (Join-Path $run 'bundle')
 $privateHash=(Get-FileHash (Join-Path $data 'identity.pfx')).Hash
 $profile=Get-Content (Join-Path $data 'requester.json') -Raw|ConvertFrom-Json
-& $exe requester $data *> (Join-Path $run 'existing-requester.log')
-Check ($LASTEXITCODE -ne 0 -and (Get-FileHash (Join-Path $data 'identity.pfx')).Hash -ceq $privateHash) 'existing-requester-command-refuses-identity-overwrite'
+$code=Native {& $exe requester $data} (Join-Path $run 'existing-requester.log')
+Check ($code -ne 0 -and (Get-FileHash (Join-Path $data 'identity.pfx')).Hash -ceq $privateHash) 'existing-requester-command-refuses-identity-overwrite'
 $zip=[IO.Compression.ZipFile]::OpenRead($bundle.WorkerRecoveryZip)
 try {Check ($zip.Entries.Count -eq 5 -and !@($zip.Entries|Where-Object {$_.FullName -match '(?i)\.pfx$|identity|client\.json|worker\.json'}).Count) 'worker-transport-has-public-registration-files-only'}
 finally {$zip.Dispose()}
@@ -37,6 +40,7 @@ foreach($index in 1..2){
     $configPath=Join-Path $worker 'worker.json';$config=Get-Content $configPath -Raw|ConvertFrom-Json
     $socket=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$socket.Start();$port=$socket.LocalEndpoint.Port;$socket.Stop()
     $config.port=$port;$config|ConvertTo-Json|Set-Content $configPath
+    Set-Content -LiteralPath (Join-Path $worker 'start-worker.cmd') -Value '@echo off' -Encoding ASCII
     $oldClient=Join-Path $pair 'client/client.json';$old=Get-Content $oldClient -Raw|ConvertFrom-Json;$old.port=$port;$old|ConvertTo-Json|Set-Content $oldClient
     $oldConfigHash=(Get-FileHash $configPath).Hash;$certHash=(Get-FileHash (Join-Path $worker 'identity.pfx')).Hash
     $state=Join-Path $worker 'state';New-Item -ItemType Directory $state|Out-Null
@@ -55,22 +59,31 @@ foreach($index in 1..2){
         [IO.File]::ReadAllText($evidence) -ceq 'retain this existing state') "worker-$index-registration-backs-up-config-and-preserves-identity-state-budgets"
     $unchangedHash=(Get-FileHash $configPath).Hash
     $repeat=Register $worker
-    Check (!$repeat.Changed -and (Get-FileHash $configPath).Hash -ceq $unchangedHash -and @(Get-ChildItem $worker -Filter 'worker.json.backup-*').Count -eq 1) "worker-$index-registration-is-idempotent"
+    Check (!$repeat.Changed -and (Get-FileHash $configPath).Hash -ceq $unchangedHash -and @(Get-ChildItem $worker -Filter 'worker.json.backup-*').Count -eq 1 -and !$repeat.ConnectionBackup) "worker-$index-registration-is-idempotent"
+    # A stale derived export must not leave registration permanently failing after the config commit.
+    $exportBytes=[IO.File]::ReadAllBytes($registration.ConnectionFile)
+    $stale=Get-Content $registration.ConnectionFile -Raw|ConvertFrom-Json;$stale.port=1;$stale|ConvertTo-Json|Set-Content $registration.ConnectionFile
+    $staleHash=(Get-FileHash $registration.ConnectionFile).Hash
+    $regenerated=Register $worker
+    Check (!$regenerated.Changed -and (Get-FileHash $configPath).Hash -ceq $unchangedHash -and $regenerated.ConnectionBackup -and
+        (Get-FileHash $regenerated.ConnectionBackup).Hash -ceq $staleHash -and
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($registration.ConnectionFile)) -ceq [Convert]::ToBase64String($exportBytes)) "worker-$index-stale-export-is-backed-up-and-regenerated"
     $import=& (Join-Path $PSScriptRoot 'Import-WorkerConnection.ps1') -ConnectionDirectory $data -WorkerConnectionFile $registration.ConnectionFile -HostName '127.0.0.1'
+    if($index -eq 1){$recoveredClient=$import.ClientConfig}
     $pins.Add($import.WorkerPin)
     $repeatImport=& (Join-Path $PSScriptRoot 'Import-WorkerConnection.ps1') -ConnectionDirectory $data -WorkerConnectionFile $registration.ConnectionFile -HostName '127.0.0.1'
     Check ($repeatImport.ClientConfig -ceq $import.ClientConfig -and (Test-Path $import.ClientConfig)) "worker-$index-import-is-idempotent-and-outside-artifacts"
     $server=Start-Process -FilePath (Join-Path $worker 'dbe-worker.exe') -ArgumentList @('serve',('"'+$configPath+'"')) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $run "server-$index.log") -RedirectStandardError (Join-Path $run "server-$index-error.log")
     try {
         $ready=$false
-        for($attempt=0;$attempt -lt 40;$attempt++){& $exe info $import.ClientConfig 7 *> (Join-Path $run "info-$index.json");if(!$LASTEXITCODE){$ready=$true;break};if($server.HasExited){break};Start-Sleep -Milliseconds 100}
+        for($attempt=0;$attempt -lt 40;$attempt++){if(!(Native {& $exe info $import.ClientConfig 7} (Join-Path $run "info-$index.json"))){$ready=$true;break};if($server.HasExited){break};Start-Sleep -Milliseconds 100}
         Check $ready "worker-$index-new-requester-authenticates-to-original-worker-identity"
         Register $worker $true
         Check ((Get-FileHash $configPath).Hash -ceq $unchangedHash) "worker-$index-running-worker-refuses-registration"
-        & $exe info $oldClient 7 *> (Join-Path $run "old-client-$index.log")
-        Check ($LASTEXITCODE -ne 0) "worker-$index-old-requester-is-not-authorized-after-rotation"
-        & $exe probe $import.ClientConfig (Join-Path $run "compile-$index") *> (Join-Path $run "compile-$index.log")
-        Check ($LASTEXITCODE -eq 0 -and (Test-Path (Join-Path $run "compile-$index/result.obj"))) "worker-$index-real-TLS-MSVC-compile-with-recovered-connection"
+        $code=Native {& $exe info $oldClient 7} (Join-Path $run "old-client-$index.log")
+        Check ($code -ne 0) "worker-$index-old-requester-is-not-authorized-after-rotation"
+        $code=Native {& $exe probe $import.ClientConfig (Join-Path $run "compile-$index")} (Join-Path $run "compile-$index.log")
+        Check ($code -eq 0 -and (Test-Path (Join-Path $run "compile-$index/result.obj"))) "worker-$index-real-TLS-MSVC-compile-with-recovered-connection"
     } finally {if(!$server.HasExited){$server.Kill();$server.WaitForExit(10000)|Out-Null};$server.Dispose()}
 }
 Check ($pins[0] -cne $pins[1]) 'two-distinct-worker-identities-share-only-requester-identity'
@@ -81,8 +94,11 @@ catch {if($_.Exception.Message -notlike 'Invalid Worker connection export*'){thr
 $bad=Join-Path $run 'bad-requester';New-Item -ItemType Directory $bad|Out-Null
 Copy-Item (Join-Path $data 'requester.cer') $bad
 $invalid=Get-Content (Join-Path $data 'requester.json') -Raw|ConvertFrom-Json;$invalid.requesterPin='0'*64;$invalid|ConvertTo-Json|Set-Content (Join-Path $bad 'requester.json')
-Register (Join-Path $run 'pair-1/worker') $true $bad
-Check $true 'mismatched-public-requester-certificate-refused'
+$pairOneConfig=Join-Path $run 'pair-1/worker/worker.json';$pairOneHash=(Get-FileHash $pairOneConfig).Hash
+$badLog=Join-Path $run 'mismatched-requester.log'
+$code=Native {& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Register-Requester.ps1') -WorkerDirectory (Join-Path $run 'pair-1/worker') -RequesterDirectory $bad} $badLog
+Check ($code -ne 0 -and (Get-Content $badLog -Raw) -match 'Requester certificate identity or validity mismatch' -and
+    (Get-FileHash $pairOneConfig).Hash -ceq $pairOneHash) 'mismatched-public-requester-certificate-refused'
 if($PackagePublishDirectory){
     $package=& (Join-Path $PSScriptRoot 'Package-Worker.ps1') -PublishDirectory $PackagePublishDirectory -WorkerAddress '127.0.0.1' -Compiler $Compiler -ConnectionDirectory (Join-Path $data 'install-pair') -OutputDirectory (Join-Path $run 'package-output')
     & (Join-Path $PSScriptRoot 'Test-WorkerPackage.ps1') -DeploymentFile $package.DeploymentFile *> (Join-Path $run 'package-verification.log')
@@ -94,11 +110,26 @@ if($PackagePublishDirectory){
     Move-Item -LiteralPath $oldOutput -Destination $retainedOutput
     $version=& $package.ClientExecutable --version
     Check (!(Test-Path $oldOutput) -and $version -and (Test-Path $package.ClientConfig) -and (Test-Path $package.WorkerConfig) -and (Test-Path $package.DeploymentFile)) 'installed-client-and-deployment-survive-artifact-directory-removal'
+    $installed=Join-Path $run 'installed-worker';Expand-Archive -LiteralPath (Join-Path $retainedOutput 'dbe-worker-win-x64.zip') -DestinationPath $installed
+    try {& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -DeploymentFile $package.DeploymentFile -PublishDirectory $PackagePublishDirectory -Compiler $Compiler -ConnectionDirectory (Join-Path $data 'refused-compiler') -OutputDirectory (Join-Path $run 'refused-compiler')|Out-Null;throw 'Accepted compiler selection change'}
+    catch {if($_.Exception.Message -notlike '*does not use a bundled toolchain*'){throw}
+        Check (!(Test-Path (Join-Path $data 'refused-compiler')) -and !(Test-Path (Join-Path $run 'refused-compiler'))) 'runtime-upgrade-refuses-compiler-selection-change-before-writing'}
     $upgrade=& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -DeploymentFile $package.DeploymentFile -PublishDirectory $PackagePublishDirectory -ConnectionDirectory (Join-Path $data 'upgrade-pair') -OutputDirectory (Join-Path $run 'upgrade-output')
-    & (Join-Path $PSScriptRoot 'Test-WorkerPackage.ps1') -DeploymentFile $upgrade.DeploymentFile *> (Join-Path $run 'upgrade-verification.log')
+    & (Join-Path $PSScriptRoot 'Test-WorkerPackage.ps1') -DeploymentFile $upgrade.DeploymentFile -InstalledWorkerDirectory $installed *> (Join-Path $run 'upgrade-verification.log')
     if(!$?){throw 'Upgrade package verification failed'}
     Check ((Get-FileHash (Join-Path (Split-Path $upgrade.ClientConfig -Parent) 'identity.pfx')).Hash -ceq $pairKey -and
         (Get-Content $upgrade.ClientConfig -Raw|ConvertFrom-Json).workerPin -ceq (Get-Content $package.ClientConfig -Raw|ConvertFrom-Json).workerPin) 'upgrade-preserves-authentication-from-durable-data-after-output-removal'
+    # A Worker re-registered to the recovered requester is upgraded without reverting its allowed pin.
+    $recoveredWorker=Join-Path $run 'pair-1/worker';$recoveredConfigHash=(Get-FileHash (Join-Path $recoveredWorker 'worker.json')).Hash
+    try {& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -ClientConfig $recoveredClient -PublishDirectory $PackagePublishDirectory -Compiler $Compiler -ConnectionDirectory (Join-Path $data 'refused-recovered-compiler') -OutputDirectory (Join-Path $run 'refused-recovered-compiler')|Out-Null;throw 'Accepted compiler change for unknown config'}
+    catch {if($_.Exception.Message -notlike 'Compiler replacement requires a deployment record*'){throw};Check $true 'recovered-upgrade-refuses-compiler-change-for-unknown-worker-config'}
+    $recoveredUpgrade=& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -ClientConfig $recoveredClient -PublishDirectory $PackagePublishDirectory -ConnectionDirectory (Join-Path $data 'recovered-upgrade') -OutputDirectory (Join-Path $run 'recovered-upgrade-output')
+    & (Join-Path $PSScriptRoot 'Test-WorkerPackage.ps1') -DeploymentFile $recoveredUpgrade.DeploymentFile -InstalledWorkerDirectory $recoveredWorker *> (Join-Path $run 'recovered-upgrade-verification.log')
+    if(!$?){throw 'Recovered upgrade verification failed'}
+    $second=& (Join-Path $PSScriptRoot 'Package-WorkerUpgrade.ps1') -DeploymentFile $recoveredUpgrade.DeploymentFile -PublishDirectory $PackagePublishDirectory -ConnectionDirectory (Join-Path $data 'recovered-upgrade-2') -OutputDirectory (Join-Path $run 'recovered-upgrade-output-2')
+    $recoveredFull=[IO.Path]::GetFullPath($recoveredClient)
+    Check ([IO.Path]::GetFullPath($recoveredUpgrade.ClientConfig) -ieq $recoveredFull -and [IO.Path]::GetFullPath($second.ClientConfig) -ieq $recoveredFull -and !$recoveredUpgrade.WorkerConfig -and
+        (Get-FileHash (Join-Path $recoveredWorker 'worker.json')).Hash -ceq $recoveredConfigHash) 'recovered-worker-runtime-upgrade-keeps-registered-requester'
 }
 $report=[pscustomobject]@{Run=$run;Checks=$checks.ToArray();ConnectionDirectory=$data;Scope='Synthetic loopback Workers; Windows PowerShell registration; real mutual TLS and MSVC. Physical Worker recovery remains separate.'}
 $report|ConvertTo-Json -Depth 5|Set-Content (Join-Path $run 'checks.json')

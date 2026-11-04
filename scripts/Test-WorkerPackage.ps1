@@ -1,13 +1,24 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$DeploymentFile)
+param([Parameter(Mandatory)][string]$DeploymentFile,[string]$InstalledWorkerDirectory)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $deployment = Get-Content -Raw -LiteralPath $DeploymentFile | ConvertFrom-Json
 $root = Split-Path $PSScriptRoot -Parent
 $run = Join-Path $root ('out\package-test-' + [Guid]::NewGuid().ToString('N'))
 $extracted = Join-Path $run 'extracted 한글'
-Expand-Archive -LiteralPath $deployment.WorkerZip -DestinationPath $extracted
-if (Test-Path -LiteralPath (Join-Path $extracted 'client.json')) { throw 'Client configuration leaked into Worker ZIP.' }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [IO.Compression.ZipFile]::OpenRead($deployment.WorkerZip)
+try { $entries = @($archive.Entries | ForEach-Object { $_.FullName }) } finally { $archive.Dispose() }
+if ($entries -contains 'client.json') { throw 'Client configuration leaked into Worker ZIP.' }
+if ($InstalledWorkerDirectory) {
+    # Runtime-only upgrade: the Worker keeps its own identity and config; apply over a copy.
+    if (@($entries | Where-Object { $_ -in @('identity.pfx','worker.json') }).Count) { throw 'Upgrade ZIP carries Worker-owned identity or config.' }
+    New-Item -ItemType Directory -Path $extracted | Out-Null
+    Copy-Item -Path (Join-Path (Resolve-Path -LiteralPath $InstalledWorkerDirectory).ProviderPath '*') -Destination $extracted -Recurse
+    Expand-Archive -LiteralPath $deployment.WorkerZip -DestinationPath $extracted -Force
+} else {
+    Expand-Archive -LiteralPath $deployment.WorkerZip -DestinationPath $extracted
+}
 foreach ($required in @('dbe-worker.exe','dbe-process.dll','coreclr.dll','identity.pfx','worker.json','start-worker.cmd','Allow-WorkerFirewall.ps1')) {
     if (!(Test-Path -LiteralPath (Join-Path $extracted $required))) { throw "Package missing $required" }
 }
