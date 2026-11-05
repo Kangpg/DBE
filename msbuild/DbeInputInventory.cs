@@ -148,8 +148,10 @@ public sealed class DbeInputInventory : Task
                     using (var stream = File.OpenRead(Full(file))) entries.Add("runtime:" + Full(file) + ":" + BitConverter.ToString(sha.ComputeHash(stream)));
                 Func<IEnumerable<string>, string> digest = lines => BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(String.Join("\n", lines))));
                 var state = new List<string> { digest(entries) };
-                var previous = File.Exists(StateFile) ? File.ReadAllLines(StateFile) : new string[0];
-                Changed = previous.Length == 0 || previous[0].Trim() != state[0];
+                // '|' cannot occur in a Windows path, and unlike ';' it stays one MSBuild value.
+                var previous = File.Exists(StateFile) ? File.ReadAllText(StateFile).Trim().Split('|') : new string[0];
+                Changed = previous.Length == 0 || previous[0] != state[0];
+                if (Changed && previous.Length != 0) Log.LogMessage(MessageImportance.High, "DBE: include inventory changed for declared roots; recompiling this project");
                 // A directory learned from tracker logs is recorded on first sight, not
                 // treated as a change: the compile that read it already saw its contents.
                 // Once recorded, any later membership change in it is detected.
@@ -162,10 +164,14 @@ public sealed class DbeInputInventory : Task
                         ? Directory.EnumerateFiles(root).Where(x => IncludeCandidates.Contains(Path.GetExtension(x))).Select(x => x.ToUpperInvariant()).OrderBy(x => x, StringComparer.Ordinal)
                         : Enumerable.Empty<string>();
                     string value = digest(siblings), known;
-                    if (recorded.TryGetValue(root, out known) && known != value) Changed = true;
+                    if (recorded.TryGetValue(root, out known) && known != value)
+                    {
+                        Changed = true;
+                        Log.LogMessage(MessageImportance.High, "DBE: include directory membership changed: " + root);
+                    }
                     state.Add(value + "\t" + root);
                 }
-                Fingerprint = String.Join(";", state);
+                Fingerprint = String.Join("|", state);
             }
             if (Changed && NativeLocal && !String.IsNullOrEmpty(TrackerDirectory)) InvalidatedObjects = LocalObjects();
         }

@@ -43,7 +43,7 @@ try {
     foreach($entry in @{PrecompiledHeaderFile='stdafx.h';MultiProcessorCompilation='true';SupportJustMyCode='true';TreatAngleIncludeAsExternal='true';ExternalWarningLevel='TurnOffAllWarnings'}.GetEnumerator()){$n=$xml.CreateElement($entry.Key,$xml.DocumentElement.NamespaceURI);$n.InnerText=$entry.Value;$cl.AppendChild($n)|Out-Null}
     $group=$xml.SelectSingleNode('//m:ItemGroup[m:ClCompile]',$ns)
     foreach($name in @('stdafx.cpp','cp949.cpp','utf16.cpp')){$n=$xml.CreateElement('ClCompile',$xml.DocumentElement.NamespaceURI);$n.SetAttribute('Include',$name);if($name -eq 'stdafx.cpp'){$pch=$xml.CreateElement('PrecompiledHeader',$xml.DocumentElement.NamespaceURI);$pch.InnerText='Create';$n.AppendChild($pch)|Out-Null};$group.AppendChild($n)|Out-Null};$xml.Save($project)
-    [Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance)
+    if ($PSVersionTable.PSEdition -eq 'Core') { [Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance) }
     [IO.File]::WriteAllText((Join-Path $projectRoot 'stdafx.h'),"#pragma once`n#include <vector>`n#include <external-warning.h>`n")
     if($NativeInputs){
         $sibling=Join-Path $inputScope 'sibling';New-Item -ItemType Directory -Path $sibling|Out-Null
@@ -52,8 +52,10 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $projectRoot 'headers\external-warning.h'),"#pragma once`ninline int external_warning(double x) { return x; }`n")
     [IO.File]::WriteAllText((Join-Path $projectRoot 'stdafx.cpp'),"#include `"stdafx.h`"`n")
-    [IO.File]::WriteAllText((Join-Path $projectRoot 'cp949.cpp'),"#include `"stdafx.h`"`nint cp949_value(){return L`"한글`"[0];}`n",[Text.Encoding]::GetEncoding(949))
-    [IO.File]::WriteAllText((Join-Path $projectRoot 'utf16.cpp'),"#include `"stdafx.h`"`nint utf16_value(){return L`"한글`"[0];}`n",[Text.Encoding]::Unicode)
+    # Character codes keep this fixture independent of how PowerShell decodes the script.
+    $korean=[string][char]0xD55C+[char]0xAE00
+    [IO.File]::WriteAllText((Join-Path $projectRoot 'cp949.cpp'),"#include `"stdafx.h`"`nint cp949_value(){return L`"$korean`"[0];}`n",[Text.Encoding]::GetEncoding(949))
+    [IO.File]::WriteAllText((Join-Path $projectRoot 'utf16.cpp'),"#include `"stdafx.h`"`nint utf16_value(){return L`"$korean`"[0];}`n",[Text.Encoding]::Unicode)
     [IO.File]::WriteAllText((Join-Path $projectRoot 'main.cpp'),"#include `"stdafx.h`"`nint remote_value(); int cp949_value(); int utf16_value();`nint main(){return cp949_value()==0xd55c && utf16_value()==0xd55c ? remote_value() : 1;}`n",[Text.UTF8Encoding]::new($true))
     $valuePath=Join-Path $projectRoot 'value.cpp';[IO.File]::WriteAllText($valuePath,"#include `"stdafx.h`"`n"+[IO.File]::ReadAllText($valuePath))
     if($HybridPolicy){
@@ -144,7 +146,7 @@ try {
     if(!(Select-String -LiteralPath $errorLog -Pattern 'C4244|C2220' -Quiet)){throw 'User warning was suppressed'}
     $checks.Add('external-warning-suppression-preserves-user-WX')
     [IO.File]::WriteAllText($valuePath,"#include `"stdafx.h`"`n"+[IO.File]::ReadAllText((Join-Path $root 'fixture-remote\value.cpp')))
-    [IO.File]::WriteAllText((Join-Path $projectRoot 'utf16.cpp'),"#include `"stdafx.h`"`nint utf16_value(){return L`"한글`"[0];} const wchar_t* lost=L`"😀`";`n",[Text.Encoding]::Unicode)
+    [IO.File]::WriteAllText((Join-Path $projectRoot 'utf16.cpp'),"#include `"stdafx.h`"`nint utf16_value(){return L`"$korean`"[0];} const wchar_t* lost=L`"$([char]::ConvertFromUtf32(0x1F600))`";`n",[Text.Encoding]::Unicode)
     $loss=Build '05-loss-rejected' 'Debug' (!$HybridPolicy)
     if(!$HybridPolicy){if(!(Select-String -LiteralPath $loss -SimpleMatch 'cannot round-trip' -Quiet)){throw 'Preprocessor Unicode loss was not diagnosed'};$checks.Add('nonrepresentable-code-rejected-before-remote-publication')}
     else {& (Join-Path $projectRoot 'out\Debug\bin\remote-probe.exe');if($LASTEXITCODE -ne 42){throw 'Hybrid encoding fallback changed result'};$checks.Add('hybrid-preserves-unrepresentable-input-via-local-compiler')}

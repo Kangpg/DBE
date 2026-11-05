@@ -1,8 +1,8 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$AdapterDirectory)
+param([Parameter(Mandatory)][string]$AdapterDirectory,[ValidateSet('2022','2026')][string]$VisualStudio='2022',[int]$MinimumRemoteCompletions=0)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent;. (Join-Path $PSScriptRoot 'Toolchain.ps1')
-$tools=Get-DbeToolchain '2022' (Join-Path $root 'native\dbe-cl.vcxproj')
+$tools=Get-DbeToolchain $VisualStudio (Join-Path $root 'native\dbe-cl.vcxproj') 'v143'
 $mode=(Get-Content (Join-Path $AdapterDirectory 'msbuild.json') -Raw|ConvertFrom-Json).Mode
 $run=Join-Path $root ('out\hybrid-incremental-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory $run|Out-Null
 $projectRoot=Join-Path $run 'project';New-Item -ItemType Directory $projectRoot|Out-Null;Copy-Item (Join-Path $root 'fixture-remote\*') $projectRoot -Recurse
@@ -24,7 +24,13 @@ $referenceProject=Join-Path $reference 'headers.vcxproj'
 </Project>
 '@)
 [IO.File]::WriteAllText((Join-Path $reference 'shared.h'),"#pragma once`n#if __has_include(`"reference-extra.h`")`n#include `"reference-extra.h`"`n#else`n#define DBE_REFERENCE_DELTA 0`n#endif`n")
-[IO.File]::WriteAllText((Join-Path $projectRoot 'headers/value.h'),"#pragma once`n#include `"../../referenced/shared.h`"`n#define DBE_VALUE (40 + DBE_REFERENCE_DELTA)`n")
+# The reference generates this header in its pre-build step, so compile-ahead can
+# reach the consumer before the header exists. The ordinary Build must still succeed.
+$generator=[xml][IO.File]::ReadAllText($referenceProject);$generatorNs=$generator.DocumentElement.NamespaceURI
+$definitions=$generator.CreateElement('ItemDefinitionGroup',$generatorNs);$event=$generator.CreateElement('PreBuildEvent',$generatorNs);$command=$generator.CreateElement('Command',$generatorNs)
+$command.InnerText='if not exist generated.h (ping -n 4 127.0.0.1 >nul & echo #define DBE_GENERATED 0 > generated.h)'
+[void]$event.AppendChild($command);[void]$definitions.AppendChild($event);[void]$generator.DocumentElement.AppendChild($definitions);$generator.Save($referenceProject)
+[IO.File]::WriteAllText((Join-Path $projectRoot 'headers/value.h'),"#pragma once`n#include `"../../referenced/shared.h`"`n#include `"../../referenced/generated.h`"`n#define DBE_VALUE (40 + DBE_REFERENCE_DELTA + DBE_GENERATED)`n")
 $definition=[xml][IO.File]::ReadAllText($project);$ns=$definition.DocumentElement.NamespaceURI
 $group=$definition.CreateElement('ItemGroup',$ns);$item=$definition.CreateElement('ProjectReference',$ns);$item.SetAttribute('Include','..\referenced\headers.vcxproj')
 foreach($entry in @{Project='{61973446-AC14-44DE-BCFD-53F60C7C0BF8}';ReferenceOutputAssembly='false';LinkLibraryDependencies='false'}.GetEnumerator()){
@@ -36,7 +42,7 @@ function Build([string]$Name,[int]$Expected,[bool]$NoCompile=$false,[bool]$Failu
     # so a silent recompilation cannot pass the no-op contract.
     $objects=Join-Path $projectRoot 'out\Debug\obj'
     $before=if($NoCompile){@(Get-ChildItem $objects -Filter *.obj|ForEach-Object {$_.Name+'|'+$_.LastWriteTimeUtc.Ticks})}else{@()}
-    $log=Join-Path $run ($Name+'.log');& $tools.MSBuild $project /nologo /nr:false /m:1 /p:Configuration=Debug /p:Platform=x64 "/t:$Target" /v:normal *> $log
+    $log=Join-Path $run ($Name+'.log');& $tools.MSBuild $project /nologo /nr:false /m:4 /p:Configuration=Debug /p:Platform=x64 "/t:$Target" /v:normal *> $log
     if(($LASTEXITCODE -ne 0) -ne $Failure){Get-Content $log -Tail 15;throw "Unexpected result: $Name"}
     if(!$Failure){& (Join-Path $projectRoot 'out\Debug\bin\remote-probe.exe');if($LASTEXITCODE -ne $Expected){throw "Wrong runtime result: $Name / $LASTEXITCODE"}}
     if($NoCompile -and (Select-String -Path $log -Pattern 'DBE: (local(-batch)?-running|preparing|remote-requested|fallback-running)' -Quiet)){throw "No-op compiled: $Name"}
@@ -47,6 +53,9 @@ function Build([string]$Name,[int]$Expected,[bool]$NoCompile=$false,[bool]$Failu
     $checks.Add($Name)
 }
 Build initial 42
+# Report how an early compile against the not-yet-generated header appears to the caller.
+if(Select-String -Path (Join-Path $run 'initial.log') -Pattern 'C1083' -Quiet){throw 'A deferred compile-ahead failure reached the caller'}
+$checks.Add('generated-header-through-compile-ahead-without-false-errors')
 Build noop 42 $true
 [IO.File]::WriteAllText((Join-Path $reference 'reference-extra.h'),"#pragma once`n#define DBE_REFERENCE_DELTA 5`n")
 Build added-reference-sibling-include 47
@@ -70,4 +79,6 @@ Copy-Item (Join-Path $root 'fixture-remote\value.cpp') (Join-Path $projectRoot '
 Build error-recovery 44
 Build explicit-rebuild 44 $false $false Rebuild
 Build noop-after-rebuild 44 $true
-@{Run=$run;Checks=$checks.ToArray();Scope="Actual $mode MSBuild compile/link/runtime and no-op, include membership/content, forced header, error/recovery and Rebuild"}|ConvertTo-Json|Tee-Object -FilePath (Join-Path $run 'checks.json')
+$remote=@(Get-ChildItem $run -Filter *.log | Select-String -Pattern 'DBE: remote-completed ').Count
+if($remote -lt $MinimumRemoteCompletions){throw "Expected at least $MinimumRemoteCompletions remote completions, observed $remote"}
+@{Run=$run;RemoteCompletions=$remote;Checks=$checks.ToArray();Scope="Actual $mode MSBuild compile/link/runtime and no-op, include membership/content, forced header, error/recovery and Rebuild"}|ConvertTo-Json|Tee-Object -FilePath (Join-Path $run 'checks.json')

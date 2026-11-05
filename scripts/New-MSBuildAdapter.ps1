@@ -20,6 +20,7 @@ Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'Toolchain.ps1')
 $tools=Get-DbeToolchain $VisualStudio (Join-Path $root 'native\dbe-cl.vcxproj') 'v143'
+$AdditionalClients=@($AdditionalClients|Where-Object {$_})
 if(Test-Path -LiteralPath $Destination) { throw 'Adapter destination must be new.' }
 if($Mode -eq 'Hybrid' -and !$HostPolicy){throw 'Hybrid mode requires the shared HostPolicy file.'}
 if($NativeBatchFiles -gt 1 -and !$NativeInputs){throw 'Native batches require NativeInputs.'}

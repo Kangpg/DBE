@@ -104,8 +104,8 @@ static partial class MsBuildAdapter
         // Withhold the Worker's text: the initiating compiler is the authority here.
         if (reply.Status == "compile-error" && (IsWorkerEnvironmentFailure(Diagnostics("stdout")) || IsWorkerEnvironmentFailure(Diagnostics("stderr"))))
             return await FallbackNative("Worker environment could not compile this source");
-        Console.OpenStandardOutput().Write(Diagnostics("stdout"));
-        Console.OpenStandardError().Write(Diagnostics("stderr"));
+        CompilerOutput.Write(Diagnostics("stdout"));
+        CompilerOutput.Write(Diagnostics("stderr"), true);
         if (reply.Status == "compile-error")
         {
             foreach (var source in sources) DeleteObject(source.Object);

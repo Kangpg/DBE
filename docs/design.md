@@ -9,7 +9,10 @@ VSIX → 원래 MSBuild CL Task/추적 → Adapter → local MSVC 또는 TLS Wor
 - 파일: 기본 경로는 준비된 TU와 명시 입력을 TLS로 보내고 object/PDB를 검증 후 원자적으로 반영한다. v6 선택 경로는 허용 범위의 원본 입력, Worker별 hash·mtime blob 캐시와 재사용 입력 트리를 사용한다. 소비자 object를 저장하는 빌드 결과 캐시는 아니다.
 - Local staging: object별 hash/attempt 중첩과 compiler 출력 폴더를 분리한다. 짧은 Job 전용 폴더를 사용하고, 확인된 프로세스 정리 후에만 지운다. 최종 목적지 볼륨에서 rename하여 publication한다.
 - PCH: 기본 Hybrid는 생성이 local이고 원격 사용자는 `/P /Y-`로 펼친다. 선택적인 [v6 원본 입력 경로](native-pch.md)는 원래 `/Yc`·`/Yu`를 실행하고 입력·생성 옵션·로컬 생성 세대가 같은 Worker PCH를 재사용한다. 기준 PDB를 고정하고 소비자별 사본을 사용한다. 같은 local PDB는 하나의 MP Job 안에서 사용한다.
-- 추적: native MSBuild 추적을 보존하고 include membership 변화를 추가로 확인한다. runtime 파일은 실제 parent directory 기준으로 제외한다.
+- Compile-ahead: Hybrid 명령줄 빌드에서 참조를 빌드하는 동안 자기 컴파일을 같은 병렬 MSBuild 호출로 시작한다. 인스턴스는 ProjectReference 없이 PrepareForBuild와 ClCompile만 실행한다. 실패 진단은 버리고 객체를 남기지 않아, 일반 Build가 의존 순서대로 다시 컴파일하고 진짜 오류를 보고한다. 일반 VS 솔루션 빌드는 VS가 순서를 정하므로 적용되지 않는다.
+- 자동 입력 범위: 선택형이며 프로젝트가 선언한 경로를 신뢰한다. 선언되지 않은 경로의 파일을 `__has_include`로 찾는 소스는 원격과 로컬 결과가 다를 수 있다. 일반 include 누락은 `C1083`로 로컬에서 다시 판정한다.
+- 실패 처리: 원격 실패가 이어지면 해당 CL Task는 원래 fan-out의 로컬 Job으로 돌아간다. DBE 상태나 스케줄러를 쓸 수 없으면 원래 도구를 원래 명령으로 실행하고 lease는 보존한다. 입력 해시 인덱스는 MSBuild 추적과 같이 경로·크기·수정 시각을 신뢰하므로, 시각과 크기를 유지한 채 내용만 바뀐 파일은 빌드 사이에 감지하지 못한다.
+- 추적: native MSBuild 추적을 보존하고 include membership 변화를 추가로 확인한다. include가 될 수 있는 확장자의 파일만 세고, 솔루션 폴더는 감시 범위에 넣지 않는다. tlog로 처음 관찰한 폴더는 기록만 하고 이후 변화를 감지한다. runtime 파일은 실제 parent directory 기준으로 제외한다.
 - 예산: Worker별 준비 티켓과 실제 요청 제한을 분리한다. fallback은 local PDB 대기 전에 원격 lease를 놓는다. 동일 scheduler에서 required-local waiter가 새 MP group에 밀리지 않게 한다.
 - 보호: 수신 PC 사용자가 우선이다. 현재 fixed slots는 개인용/전용 정책, 활동 감지, 양방향 capacity 광고, 머신 전체 budget, 여러 요청자 공정성을 완성하지 못했다.
 - UI: VSIX 별도 명령과 UTF-8 출력이 있다. 웹 대시보드는 없다. 요청 이벤트와 실제 Worker 실행 상태를 구분해야 한다.

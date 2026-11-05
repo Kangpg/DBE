@@ -39,7 +39,7 @@
     <ProjectReference Remove="@(ProjectReference)" />
   </ItemGroup>
   <Target Name="DBECompileAhead" BeforeTargets="ResolveProjectReferences"
-          Condition="'$(DBEEnabled)' == 'true' And '$(DBECompileAhead)' != 'false' And '$(DBECompileAheadInstance)' != 'true' And '$(BuildingInsideVisualStudio)' != 'true' And '$(BuildProjectReferences)' != 'false' And '@(_MSBuildProjectReferenceExistent)' != '' And '@(ClCompile)' != ''">
+          Condition="'$(DBEEnabled)' == 'true' And '$(DBEHybrid)' == 'true' And '$(DBECompileAhead)' != 'false' And '$(DBECompileAheadInstance)' != 'true' And '$(BuildingInsideVisualStudio)' != 'true' And '$(BuildProjectReferences)' != 'false' And '@(_MSBuildProjectReferenceExistent)' != '' And '@(ClCompile)' != ''">
     <ItemGroup>
       <DBEAheadProject Include="@(_MSBuildProjectReferenceExistent)" Condition="'%(_MSBuildProjectReferenceExistent.BuildReference)' == 'true'">
         <Properties>%(_MSBuildProjectReferenceExistent.SetConfiguration);%(_MSBuildProjectReferenceExistent.SetPlatform);%(_MSBuildProjectReferenceExistent.SetTargetFramework)</Properties>
@@ -63,9 +63,13 @@
     <PropertyGroup Condition="'$(DBENativeAutoScope)' == 'true'">
       <DBEScopeRoots Condition="'$(SolutionDir)' != '' and '$(SolutionDir)' != '*Undefined*'">$(SolutionDir)</DBEScopeRoots>
       <DBEScopeRoots>$(DBEScopeRoots);$(MSBuildProjectDirectory);@(DBEDeclaredReference->'%(RootDir)%(Directory)')</DBEScopeRoots>
-      <DBENativeInputRoots>$(DBENativeInputRoots);$(DBEScopeRoots)</DBENativeInputRoots>
     </PropertyGroup>
+    <!-- These roots describe what a Worker may need, not what the membership guard
+         watches: a solution directory also holds other projects' generated sources,
+         which appear during the build. Files actually read are tracked from tlogs. -->
     <SetEnv Condition="'$(DBENativeAutoScope)' == 'true'" Name="DBE_INPUT_ROOTS" Value="$(DBEScopeRoots)" Prefix="false" />
+    <SetEnv Condition="'$(DBECompileAheadInstance)' == 'true'" Name="DBE_COMPILE_AHEAD" Value="1" Prefix="false" />
+    <SetEnv Condition="'$(DBECompileAheadInstance)' != 'true'" Name="DBE_COMPILE_AHEAD" Value="0" Prefix="false" />
     <Error Condition="!Exists('$(DBEAdapterDirectory)\dbe-remote-cl.exe') Or !Exists('$(DBEAdapterDirectory)\msbuild.json')" Text="DBEAdapterDirectory must contain the configured MSBuild adapter." />
     <Error Condition="'$(Platform)' != 'x64'" Text="DBE remote adapter currently requires Platform=x64." />
     <Error Condition="'$(PlatformToolset)' != 'v143'" Text="DBE remote adapter currently requires the explicitly configured v143 toolchain." />

@@ -53,6 +53,17 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
         finally { admission.Release(); }
     }
 
+    private readonly List<Entry> undeleted = [];
+    internal int UndeletedContexts => undeleted.Count;
+    private static bool TryDelete(Entry entry)
+    {
+        try { entry.Delete(); return true; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine("DBE: retained native context " + entry.Root + ": " + e.GetType().Name + ": " + e.Message);
+            return false;
+        }
+    }
     private async Task<Entry> Borrow(NativeInvocation invocation, CancellationToken token)
     {
         await admission.WaitAsync(token);
@@ -62,12 +73,15 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
             string key = invocation.Context.Identity;
             if (entries.TryGetValue(key, out var existing)) { Interlocked.Increment(ref existing.Users); return existing; }
             const long estimate = 2L * 1024 * 1024 * 1024;
-            while (entries.Count >= ContextLimit || entries.Values.Sum(x => x.Bytes) + estimate > ByteLimit)
+            undeleted.RemoveAll(TryDelete);
+            while (entries.Count + undeleted.Count >= ContextLimit || entries.Values.Concat(undeleted).Sum(x => x.Bytes) + estimate > ByteLimit)
             {
                 var old = entries.Values.Where(x => Volatile.Read(ref x.Users) == 0 && !x.Retain).OrderBy(x => x.LastUse).FirstOrDefault();
                 if (old is null) throw new Rejected("Reusable native contexts are at capacity");
-                try { old.Delete(); entries.Remove(old.Key); }
-                catch { old.Retain = true; Interlocked.Exchange(ref unhealthy, 1); throw; }
+                // Its processes have already been joined, so a failed delete only leaves
+                // files. Retain them and their budget, but keep serving other contexts.
+                entries.Remove(old.Key);
+                if (!TryDelete(old)) undeleted.Add(old);
             }
             Directory.CreateDirectory(root); Wire.NoReparse(root);
             if (new DriveInfo(Path.GetPathRoot(Path.GetFullPath(root))!).AvailableFreeSpace < 2L * 1024 * 1024 * 1024 + estimate)
@@ -193,6 +207,8 @@ sealed class NativeCompilationCache(string root, NativeInputCache inputs, Runtim
             try { entry.Delete(); }
             catch { entry.Retain = true; Interlocked.Exchange(ref unhealthy, 1); }
         }
+        // A context that still cannot be removed at shutdown keeps the Worker's owner.
+        foreach (var entry in undeleted) if (!TryDelete(entry)) Interlocked.Exchange(ref unhealthy, 1);
         if (!Unhealthy)
         {
             try { if (Directory.Exists(root)) Directory.Delete(root); }

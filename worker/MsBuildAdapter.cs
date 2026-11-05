@@ -26,9 +26,10 @@ static partial class MsBuildAdapter
     // results are returned normally and do not reach this path.
     internal static async Task<int> RunOrOriginal(string tool, Func<Task<int>> distributed, CancellationToken token)
     {
-        try { return await distributed(); }
+        try { return CompilerOutput.Finish(await distributed()); }
         catch (Exception e) when (!token.IsCancellationRequested && e is Rejected or IOException or UnauthorizedAccessException or JsonException)
         {
+            if (CompilerOutput.Deferred) return CompilerOutput.Finish(1);
             var (config, _) = AdapterConfig.Read(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
             Console.WriteLine("DBE: unavailable, running the original " + tool + ": " + e.Message);
             Execution result = Native.RunInitiator(Path.Combine(Path.GetDirectoryName(config.RealCompiler)!, tool),
@@ -265,7 +266,7 @@ static partial class MsBuildAdapter
         foreach (string stream in new[] { "stdout", "stderr" })
         {
             string file = Path.Combine(outputRoot, stream + ".bin");
-            if (File.Exists(file)) (stream == "stdout" ? Console.OpenStandardOutput() : Console.OpenStandardError()).Write(File.ReadAllBytes(file));
+            if (File.Exists(file)) CompilerOutput.Write(File.ReadAllBytes(file), stream == "stderr");
         }
         if (result.Status == "compile-error")
         {
@@ -390,9 +391,9 @@ static partial class MsBuildAdapter
     }
     private static Task<int> Fallback(AdapterConfig config, string raw, string reason, CancellationToken token, HostScheduler? scheduler) =>
         config.Mode is "Auto" or "Hybrid" ? LocalBounded(config, raw, "fallback: " + reason, token, scheduler) : Task.FromResult(Fail(reason));
-    private static int Fail(string message) { Console.Error.WriteLine("DBE : error DBE0001: " + message); return 125; }
+    private static int Fail(string message) { CompilerOutput.Error("DBE : error DBE0001: " + message); return 125; }
     private static void Emit(Execution result)
-    { Console.OpenStandardOutput().Write(result.Stdout); Console.OpenStandardError().Write(result.Stderr); }
+    { CompilerOutput.Write(result.Stdout); CompilerOutput.Write(result.Stderr, true); }
     private static void DeleteObject(string path) { if (File.Exists(path)) File.Delete(path); }
     private static void TrimHistory(string root, string objectId)
     {
