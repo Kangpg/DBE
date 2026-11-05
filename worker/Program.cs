@@ -13,9 +13,9 @@ static class Program
             // Only the explicitly launched build family receives this event name.
             using var buildCancellation = BuildCancellation.Observe(stop);
             string name = System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath) ?? "";
-            if (name is "dbe-link" or "dbe-lib") return await MsBuildAdapter.RunBuildTool(name[4..], stop.Token);
+            if (name is "dbe-link" or "dbe-lib") return await MsBuildAdapter.RunOrOriginal(name[4..] + ".exe", () => MsBuildAdapter.RunBuildTool(name[4..], stop.Token), stop.Token);
             if (string.Equals(System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dbe-remote-cl", StringComparison.OrdinalIgnoreCase))
-                return await MsBuildAdapter.Run(args, stop.Token);
+                return await MsBuildAdapter.RunOrOriginal("cl.exe", () => MsBuildAdapter.Run(args, stop.Token), stop.Token);
             if (args.Length == 0) throw new Rejected("Commands: serve config | info config | probe config output-directory | compile config manifest input-directory output-directory | pair new-directory compiler-path | requester new-directory | self-test compiler-path child-probe-path output-directory");
             if (args.Length == 1 && args[0] == "--version")
             { Console.WriteLine(typeof(Program).Assembly.GetName().Version!.ToString(3)); return 0; }

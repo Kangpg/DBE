@@ -10,7 +10,7 @@ namespace Dbe;
 // commit. WorkerConfig alone owns incoming hard Job memory limits.
 sealed record HostPolicy(int LocalSlots = 4, int RemoteSlots = 2, int LocalMemoryMiB = 4096,
     int ReserveMemoryMiB = 8192, int WaitSeconds = 1200, int CpuBusyPercent = 85, int LinkMemoryMiB = 0, int LocalBatchSlots = 1,
-    int PreprocessMemoryMiB = 0, int LocalBatchMemoryMiB = 0, bool PreserveLocalParallelism = false, int NativeLocalJobs = 4);
+    int PreprocessMemoryMiB = 0, int LocalBatchMemoryMiB = 0, bool PreserveLocalParallelism = false, int NativeLocalJobs = 4, int LocalFirstFactor = 4);
 
 // A shared policy directory is the ownership scope, across adapter processes.
 // Occupied files survive owner death. A released OS lock is NOT cleanup proof.
@@ -23,6 +23,22 @@ sealed class HostScheduler : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> localPdbWaiters = new(StringComparer.Ordinal);
     internal sealed record RemoteTarget(string Key, string ClientPath);
     internal int PipelineCapacity => Policy.RemoteSlots * 2 * workers.Length;
+    // A native MP Job cannot give back sources it has claimed. Its size decides
+    // how much work the Workers can still reach while that Job runs, so divide
+    // pending work by capacity. Logical processors overstate SMT throughput.
+    internal double RemoteShare
+    {
+        get
+        {
+            int remote = Policy.RemoteSlots * workers.Length;
+            return remote / (double)(remote + Math.Max(1, Environment.ProcessorCount / 2));
+        }
+    }
+    // Repeating this as Jobs finish converges on the remaining work instead of
+    // trusting one estimate of Worker speed: an idle Worker leaves more for the
+    // next Job, and a Job that finishes early takes its share of what remains.
+    internal static int LocalGroupSize(int pending, int parallelism, double remoteShare) =>
+        Math.Clamp(pending - (int)Math.Ceiling(pending * remoteShare), parallelism, parallelism * 16);
     private ulong lastIdle, lastTotal;
     private long lastSample;
     private double? cpuBusy;
@@ -45,6 +61,7 @@ sealed class HostScheduler : IDisposable
             if (Policy.PreserveLocalParallelism && (Policy.NativeLocalJobs < 1 || Policy.NativeLocalJobs > Environment.ProcessorCount))
                 throw new Rejected("Invalid native initiator Job budget");
             if (Policy.LocalBatchSlots < 1 || Policy.LocalBatchSlots > (Policy.PreserveLocalParallelism ? Policy.LocalSlots : Math.Min(4, Policy.LocalSlots))) throw new Rejected("Invalid local compile batch size");
+            if (Policy.LocalFirstFactor is < 1 or > 64) throw new Rejected("Invalid local-first budget");
             if (Policy.PreprocessMemoryMiB != 0 && Policy.PreprocessMemoryMiB < 256 || Policy.PreprocessMemoryMiB > Policy.LocalMemoryMiB ||
                 Policy.LocalBatchMemoryMiB < 0 || Policy.LocalBatchMemoryMiB > Policy.LocalSlots * Policy.LocalMemoryMiB)
                 throw new Rejected("Invalid stage memory budget");

@@ -90,11 +90,6 @@ static partial class MsBuildAdapter
         }
         options.AddRange(["/MP" + slots, "/Fo" + output]); options.AddRange(sources); return options;
     }
-    private static long SourceWeight(string source)
-    {
-        try { return new FileInfo(source).Length; }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 0; }
-    }
     private static async Task<int> CompileLocalBatch(AdapterConfig config, string root, ClInvocation[] sources,
         HostScheduler.Lease placement, CancellationToken token)
     {
@@ -116,12 +111,10 @@ static partial class MsBuildAdapter
             using var output = new LocalOutput(config, root, attempts[0].Root, sources.Select(x => Path.GetFileName(x.Object)));
             string staging = output.Root;
             string response = Path.Combine(attempts[0].Root, "scheduled-batch.rsp");
-            // /MP already permits arbitrary completion order. Start estimated
-            // heavier sources first within this Job; keep result indexing and
-            // publication order intact. Size is a hint, not an admission fact.
+            // Keep the caller's order. Source size does not predict compile time: a
+            // small file that expands heavy templates can dominate the whole Job,
+            // and sorting by size starts exactly those files last.
             IEnumerable<string> commandSources = sources.Select(x => x.SourceArgument ?? x.Source);
-            if (sources.Length > placement.Parallelism * 4)
-                commandSources = commandSources.OrderByDescending(SourceWeight);
             File.WriteAllText(response, string.Join(' ', LocalCommand(sources[0], staging + Path.DirectorySeparatorChar,
                 placement.Parallelism, commandSources).Select(ClInvocation.Quote)), Encoding.Unicode);
             for (int i = 0; i < sources.Length; i++) Event(attempts[i].Root, kind == "local" ? "local-batch-running" : "fallback-running", sources[i], Environment.MachineName);

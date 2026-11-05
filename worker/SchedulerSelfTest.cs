@@ -23,6 +23,10 @@ static class SchedulerSelfTest
         File.WriteAllText(policy, JsonSerializer.Serialize(new HostPolicy(2, 2, 256, 1024, 2, CpuBusyPercent: 100), Wire.Json));
         var checks = new List<string>();
         void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); checks.Add(name); }
+        Check(HostScheduler.LocalGroupSize(300, 16, 1d / 3) == 200 && HostScheduler.LocalGroupSize(90, 16, 1d / 3) == 60,
+            "local-MP-group-leaves-the-worker-share-unclaimed");
+        Check(HostScheduler.LocalGroupSize(9, 16, 1d / 3) == 16 && HostScheduler.LocalGroupSize(10000, 16, 1d / 3) == 256,
+            "local-MP-group-stays-within-its-fan-out-bounds");
         string nativePolicy = Path.Combine(directory, "native-policy", "host.json");
         Directory.CreateDirectory(Path.GetDirectoryName(nativePolicy)!);
         int cores = Environment.ProcessorCount;

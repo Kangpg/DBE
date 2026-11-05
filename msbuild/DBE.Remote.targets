@@ -21,6 +21,35 @@
     <CLDeleteOutputOnExecute Condition="'$(DBELocal)' == 'true'">true</CLDeleteOutputOnExecute>
     <CLDeleteOutputOnExecute Condition="'$(DBELocal)' != 'true'">false</CLDeleteOutputOnExecute>
   </PropertyGroup>
+  <!-- Compile-ahead. A project needs its references' outputs at link time, not to
+       compile, so it can compile while they build. The ordinary Build that follows
+       still resolves references and links in order, and finds its objects up to date.
+       One MSBuild call starts them together on the caller's nodes; the ordinary
+       reference step then reuses those results. A failure here is not final: the
+       ordinary Build repeats the step in dependency order and reports it. -->
+  <PropertyGroup Condition="'$(DBEEnabled)' == 'true' And '$(DBECompileAheadInstance)' == 'true'">
+    <BuildDependsOn>PrepareForBuild;ClCompile</BuildDependsOn>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(DBEEnabled)' == 'true'">
+    <DBEDeclaredReference Include="@(ProjectReference)" />
+  </ItemGroup>
+  <!-- VC's compile targets resolve references first, and asking a reference that
+       is mid-Build for its output path would block until that Build ends. -->
+  <ItemGroup Condition="'$(DBEEnabled)' == 'true' And '$(DBECompileAheadInstance)' == 'true'">
+    <ProjectReference Remove="@(ProjectReference)" />
+  </ItemGroup>
+  <Target Name="DBECompileAhead" BeforeTargets="ResolveProjectReferences"
+          Condition="'$(DBEEnabled)' == 'true' And '$(DBECompileAhead)' != 'false' And '$(DBECompileAheadInstance)' != 'true' And '$(BuildingInsideVisualStudio)' != 'true' And '$(BuildProjectReferences)' != 'false' And '@(_MSBuildProjectReferenceExistent)' != '' And '@(ClCompile)' != ''">
+    <ItemGroup>
+      <DBEAheadProject Include="@(_MSBuildProjectReferenceExistent)" Condition="'%(_MSBuildProjectReferenceExistent.BuildReference)' == 'true'">
+        <Properties>%(_MSBuildProjectReferenceExistent.SetConfiguration);%(_MSBuildProjectReferenceExistent.SetPlatform);%(_MSBuildProjectReferenceExistent.SetTargetFramework)</Properties>
+      </DBEAheadProject>
+      <DBEAheadProject Include="$(MSBuildProjectFullPath)">
+        <Properties>Configuration=$(Configuration);Platform=$(Platform);DBECompileAheadInstance=true;BuildProjectReferences=false</Properties>
+      </DBEAheadProject>
+    </ItemGroup>
+    <MSBuild Projects="@(DBEAheadProject)" BuildInParallel="true" ContinueOnError="true" />
+  </Target>
   <!-- CL runs below the launcher. Consolidate its PID-specific child logs
        into a stable canonical log so the next MP pass can clean prior outputs. -->
   <ItemGroup Condition="'$(DBEEnabled)' == 'true' And '$(DBELocal)' == 'true'">
@@ -29,13 +58,21 @@
   </ItemGroup>
   <Target Name="DBEPrepareRemoteCompile" BeforeTargets="ClCompile" Condition="'$(DBEEnabled)' == 'true'">
     <PropertyGroup><DBESelectedCompiler>$([System.IO.Path]::GetFullPath('$(VCToolsInstallDir)bin\Hostx64\x64\cl.exe'))</DBESelectedCompiler></PropertyGroup>
+    <!-- Automatic scope: this project's own solution, directory and references. The
+         INCLUDE and /I roots reach the adapter through the normal CL invocation. -->
+    <PropertyGroup Condition="'$(DBENativeAutoScope)' == 'true'">
+      <DBEScopeRoots Condition="'$(SolutionDir)' != '' and '$(SolutionDir)' != '*Undefined*'">$(SolutionDir)</DBEScopeRoots>
+      <DBEScopeRoots>$(DBEScopeRoots);$(MSBuildProjectDirectory);@(DBEDeclaredReference->'%(RootDir)%(Directory)')</DBEScopeRoots>
+      <DBENativeInputRoots>$(DBENativeInputRoots);$(DBEScopeRoots)</DBENativeInputRoots>
+    </PropertyGroup>
+    <SetEnv Condition="'$(DBENativeAutoScope)' == 'true'" Name="DBE_INPUT_ROOTS" Value="$(DBEScopeRoots)" Prefix="false" />
     <Error Condition="!Exists('$(DBEAdapterDirectory)\dbe-remote-cl.exe') Or !Exists('$(DBEAdapterDirectory)\msbuild.json')" Text="DBEAdapterDirectory must contain the configured MSBuild adapter." />
     <Error Condition="'$(Platform)' != 'x64'" Text="DBE remote adapter currently requires Platform=x64." />
     <Error Condition="'$(PlatformToolset)' != 'v143'" Text="DBE remote adapter currently requires the explicitly configured v143 toolchain." />
     <Error Condition="'$(DBEConfiguredCompiler)' == '' Or '$(DBESelectedCompiler)' != '$(DBEConfiguredCompiler)'" Text="The project-selected compiler differs from this adapter configuration. Create an adapter for the selected toolchain." />
     <DbeInputInventory Condition="'$(DBEIncrementalTracking)' == 'true'" ProjectDirectory="$(MSBuildProjectDirectory)"
         NativeLocal="$([System.String]::Equals('$(DBELocal)', 'true'))"
-        StateFile="$(IntDir)dbe-input-inventory.txt" Sources="@(ClCompile)" ProjectReferences="@(ProjectReference)" TrackerDirectory="$(TLogLocation)"
+        StateFile="$(IntDir)dbe-input-inventory.txt" Sources="@(ClCompile)" ProjectReferences="@(DBEDeclaredReference)" TrackerDirectory="$(TLogLocation)"
         ObservedInputExclusions="$(ExcludePath);$(SystemRoot);$(windir);$([System.IO.Path]::GetDirectoryName('$(DBEConfiguredCompiler)'));$(DBERuntimeDirectories)"
         SearchRoots="$(DBENativeInputRoots);$(IncludePath);$(ExternalIncludePath);@(ClCompile->'%(AdditionalIncludeDirectories)');@(ClCompile->'%(ExternalIncludePath)')"
         ExcludedRoots="$(IntDir);$(OutDir);$(DBEAdapterDirectory);$(DBEStateDirectory);$(DBELeaseDirectory)"

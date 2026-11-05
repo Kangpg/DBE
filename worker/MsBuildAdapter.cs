@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Dbe;
 sealed record AdapterConfig(string RealCompiler, string ClientConfig, string StateDirectory, string Mode, bool AllowCompilerMismatch = false, string? HostPolicy = null, string[]? AdditionalClients = null,
-    bool NativeInputs = false, string[]? NativeInputRoots = null, string[]? NativeArtifactRoots = null, string[]? NativeToolchainRoots = null, int NativeBatchFiles = 1)
+    bool NativeInputs = false, string[]? NativeInputRoots = null, string[]? NativeArtifactRoots = null, string[]? NativeToolchainRoots = null, int NativeBatchFiles = 1, bool NativeAutoScope = false)
 {
     internal IEnumerable<string> Clients => new[] { ClientConfig }.Concat(AdditionalClients ?? []);
     internal static (AdapterConfig Config, string Root) Read(string path)
@@ -20,6 +20,23 @@ static partial class MsBuildAdapter
     // The initiator owns a multi-file native batch, unlike a bounded incoming
     // Worker request. Cancellation and process-family ownership still apply.
     private const int LocalExecutionSeconds = 1200;
+    // DBE's own state must never decide whether the caller's project can build. A
+    // retained lease stays as evidence and keeps blocking DBE scheduling, but the
+    // original tool runs with the original command under its own owned Job. Compiler
+    // results are returned normally and do not reach this path.
+    internal static async Task<int> RunOrOriginal(string tool, Func<Task<int>> distributed, CancellationToken token)
+    {
+        try { return await distributed(); }
+        catch (Exception e) when (!token.IsCancellationRequested && e is Rejected or IOException or UnauthorizedAccessException or JsonException)
+        {
+            var (config, _) = AdapterConfig.Read(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
+            Console.WriteLine("DBE: unavailable, running the original " + tool + ": " + e.Message);
+            Execution result = Native.RunInitiator(Path.Combine(Path.GetDirectoryName(config.RealCompiler)!, tool),
+                Environment.CurrentDirectory, ClInvocation.RawTail(), LocalExecutionSeconds, token);
+            Emit(result);
+            return result.Kind == 0 ? unchecked((int)result.ExitCode) : Fail(tool + " supervisor kind=" + result.Kind);
+        }
+    }
     internal static async Task<int> RunBuildTool(string tool, CancellationToken token)
     {
         var (config, _) = AdapterConfig.Read(Path.Combine(AppContext.BaseDirectory, "msbuild.json"));
@@ -65,9 +82,9 @@ static partial class MsBuildAdapter
         catch (UnsupportedCompile e) { return await Fallback(config, raw, e.Message, token, scheduler); }
         int localParallelism = scheduler is null ? 1 : Math.Min(scheduler.Policy.LocalBatchSlots,
             scheduler.Policy.PreserveLocalParallelism ? batch[0].NativeParallelism() : scheduler.Policy.LocalBatchSlots);
-        // A task already fits on the initiator. Avoid cold remote preparation
-        // for work whose full native fan-out is available locally.
-        if (scheduler?.Policy.PreserveLocalParallelism == true && batch.Length <= localParallelism)
+        // A small task finishes locally before a Worker could prepare its inputs
+        // and PCH, and the project cannot link until its slowest source returns.
+        if (scheduler?.Policy.PreserveLocalParallelism == true && batch.Length <= localParallelism * scheduler.Policy.LocalFirstFactor)
         {
             int count = Math.Min(localParallelism, batch.Length);
             int reservation = count > 1 && scheduler.Policy.LocalBatchMemoryMiB > 0 ? scheduler.Policy.LocalBatchMemoryMiB : scheduler.Policy.LocalMemoryMiB;
@@ -95,20 +112,24 @@ static partial class MsBuildAdapter
         {
             while (pending.TryDequeue(out int index)) {
             var invocation = batch[index];
-            using var placement = scheduler is null ? null : await scheduler.AcquireCompile(invocation.Source, ct, invocation.CompilerPdb,
-                Math.Min(localParallelism, pending.Count + 1));
+            bool remoteViable = native is null || native.RemoteViable;
+            int fanOut = Math.Min(localParallelism, pending.Count + 1);
+            using var placement = scheduler is null ? null : remoteViable
+                ? await scheduler.AcquireCompile(invocation.Source, ct, invocation.CompilerPdb, fanOut)
+                : await scheduler.Acquire(true, invocation.Source, ct, invocation.CompilerPdb, scheduler.Policy.PreserveLocalParallelism ? fanOut : 1);
             await Task.Yield(); // Let other placements start before a synchronous native compiler call.
             var indices = new List<int> { index };
             if (placement is { IsLocal: true, Parallelism: > 1 })
             {
                 int groupLimit = placement.Parallelism * 4;
-                if (sharedPdb)
+                if (sharedPdb && native is not null)
+                    groupLimit = HostScheduler.LocalGroupSize(pending.Count, placement.Parallelism, remoteViable ? scheduler!.RemoteShare : 0);
+                else if (sharedPdb)
                 {
                     // Feed the other MP children when one TU has a long tail.
                     // Keep a pipeline of unclaimed work for both Workers.
                     int available = Math.Max(0, pending.Count - scheduler!.PipelineCapacity * config.NativeBatchFiles);
-                    int minimum = config.NativeBatchFiles > 1 ? placement.Parallelism : groupLimit;
-                    groupLimit = Math.Clamp(available, minimum, placement.Parallelism * 16);
+                    groupLimit = Math.Clamp(available, groupLimit, placement.Parallelism * 16);
                 }
                 while (indices.Count < groupLimit && pending.TryDequeue(out int next)) indices.Add(next);
             }
@@ -130,7 +151,9 @@ static partial class MsBuildAdapter
             }
             }
         });
-        if (native is not null && !native.Unchanged())
+        bool unchanged = true;
+        using (BuildTiming.Measure("native.verify")) if (native is not null) unchanged = native.Unchanged();
+        if (!unchanged)
         {
             foreach (var invocation in batch) DeleteObject(invocation.Object);
             return Fail("Native build inputs changed during compilation");

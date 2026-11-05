@@ -10,6 +10,20 @@ sealed class NativeBuild : IDisposable
     private static readonly HashSet<string> SourceExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".inl", ".inc", ".ipp", ".tpp", ".def" };
     private static readonly HashSet<string> CppSources = new(StringComparer.OrdinalIgnoreCase) { ".c", ".cc", ".cpp", ".cxx" };
+    // Bounded so input hashing cannot compete with the build it serves.
+    private const int HashConcurrency = 4;
+    // Compiler and linker outputs. DBE supplies PCH and symbol inputs itself, so
+    // listing these under a source tree only inflates the manifest.
+    private static readonly HashSet<string> BuildOutputs = new(StringComparer.OrdinalIgnoreCase)
+        { ".obj", ".pch", ".pdb", ".ilk", ".idb", ".iobj", ".ipdb", ".exp", ".tlog", ".lastbuildstate", ".ipch" };
+    // A CL Task stops offering work to Workers once they keep failing, or its own
+    // inventory cannot be described: small fallback Jobs would otherwise take turns
+    // on the shared PDB and cost far more than the original native fan-out.
+    private const int RemoteFailureLimit = 3;
+    private int remoteFailures;
+    internal bool RemoteViable => Volatile.Read(ref remoteFailures) < RemoteFailureLimit && Volatile.Read(ref unavailable) is null;
+    internal void NoteRemoteFallback() => Interlocked.Increment(ref remoteFailures);
+    internal void NoteRemoteCompleted() => Volatile.Write(ref remoteFailures, 0);
     private readonly string cwd = Environment.CurrentDirectory;
     private readonly string include = Environment.GetEnvironmentVariable("INCLUDE") ?? "";
     private readonly AdapterConfig config;
@@ -26,7 +40,11 @@ sealed class NativeBuild : IDisposable
     {
         this.config = config; this.batch = batch;
         ClientCache = new NativeClientCache(config.StateDirectory);
-        inventoryRoots = (config.NativeInputRoots ?? []).Select(Path.GetFullPath).Select(x => x.TrimEnd('\\'))
+        // MSBuild declares the project's own scope for this CL Task; see DBE.Remote.targets.
+        string[] declared = config.NativeAutoScope
+            ? (Environment.GetEnvironmentVariable("DBE_INPUT_ROOTS") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : [];
+        inventoryRoots = (config.NativeInputRoots ?? []).Concat(declared).Select(Path.GetFullPath).Select(x => x.TrimEnd('\\'))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         inputRoots = inventoryRoots.Concat((config.NativeToolchainRoots ?? []).Select(Path.GetFullPath).Select(x => x.TrimEnd('\\')))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -85,7 +103,7 @@ sealed class NativeBuild : IDisposable
             // Unrequested deferred entries describe possible inputs, not bytes
             // consumed by this compile. Resolve validates their metadata before
             // admitting bytes; unused output artifacts may change independently.
-            return files.Where(file => !file.Deferred).All(file =>
+            return files.Where(file => !file.Deferred).AsParallel().WithDegreeOfParallelism(HashConcurrency).All(file =>
             {
                 string path = Original(file.Path);
                 var metadata = new FileInfo(path);
@@ -158,12 +176,16 @@ sealed class NativeBuild : IDisposable
         if (!invocation.PreprocessOptions.Contains("/X"))
             foreach (string value in include.Split(';', StringSplitOptions.RemoveEmptyEntries)) roots.Add(Path.GetFullPath(value, cwd));
         roots = roots.Select(path => Path.TrimEndingDirectorySeparator(path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var selected = new Dictionary<string, FileInfo>(StringComparer.OrdinalIgnoreCase);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string state = Path.GetFullPath(config.StateDirectory).TrimEnd('\\') + "\\";
+        using (BuildTiming.Measure("native.snapshot.scan"))
         foreach (string root in roots.Order(StringComparer.OrdinalIgnoreCase))
         {
-            if (!inputRoots.Any(path => root.Equals(path, StringComparison.OrdinalIgnoreCase) ||
+            // Automatic scope trusts what this project declares (/I and its MSBuild
+            // IncludePath), which CL would read anyway. Only explicit configuration
+            // restricts them. The drive and budget limits still apply.
+            if (!config.NativeAutoScope && !inputRoots.Any(path => root.Equals(path, StringComparison.OrdinalIgnoreCase) ||
                 root.StartsWith(path + "\\", StringComparison.OrdinalIgnoreCase)))
                 throw new UnsupportedCompile("Native input root is outside configured project/SDK scope: " + root);
             if (root.TrimEnd('\\').Equals(Path.GetPathRoot(root)!.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
@@ -177,45 +199,82 @@ sealed class NativeBuild : IDisposable
                 if (!visited.Add(directory)) continue;
                 if (visited.Count > 65536) throw new UnsupportedCompile("Native directory budget exceeded");
                 if (directory.StartsWith(state, StringComparison.OrdinalIgnoreCase)) continue;
-                foreach (string child in Directory.EnumerateDirectories(directory))
+                // Enumeration already returned each entry's attributes, length and
+                // timestamp. The root and its ancestors were checked above, so a
+                // per-entry ancestor walk would only repeat those system calls.
+                foreach (FileSystemInfo entry in new DirectoryInfo(directory).EnumerateFileSystemInfos())
                 {
-                    if (Path.GetFileName(child) is ".git" or ".svn" ||
-                        child.StartsWith(state, StringComparison.OrdinalIgnoreCase)) continue;
-                    Wire.NoReparse(child); directories.Push(child);
-                }
-                foreach (string file in Directory.EnumerateFiles(directory))
-                {
-                    bool artifact = artifactRoots.Any(path => file.StartsWith(path, StringComparison.OrdinalIgnoreCase));
-                    bool header = SourceExtensions.Contains(Path.GetExtension(file)) && !CppSources.Contains(Path.GetExtension(file));
-                    if (artifact && !header && !batch.Any(x => file.Equals(x.Source, StringComparison.OrdinalIgnoreCase)))
+                    string child = entry.FullName;
+                    if (entry is DirectoryInfo)
+                    {
+                        if (entry.Name is ".git" or ".svn" || child.StartsWith(state, StringComparison.OrdinalIgnoreCase)) continue;
+                        RejectReparse(entry);
+                        directories.Push(child);
+                        continue;
+                    }
+                    if (BuildOutputs.Contains(entry.Extension)) continue;
+                    bool artifact = artifactRoots.Any(path => child.StartsWith(path, StringComparison.OrdinalIgnoreCase));
+                    bool header = SourceExtensions.Contains(entry.Extension) && !CppSources.Contains(entry.Extension);
+                    if (artifact && !header && !batch.Any(x => child.Equals(x.Source, StringComparison.OrdinalIgnoreCase)))
                         continue;
                     if (new[] { invocation.Object, invocation.PchFile, invocation.CompilerPdb, producer?.ObjectFile }
-                        .Concat(batch.Select(x => x.Object)).Any(x => file.Equals(x, StringComparison.OrdinalIgnoreCase))) continue;
-                    Wire.NoReparse(file);
-                    selected.Add(file);
+                        .Concat(batch.Select(x => x.Object)).Any(x => child.Equals(x, StringComparison.OrdinalIgnoreCase))) continue;
+                    RejectReparse(entry);
+                    selected[child] = (FileInfo)entry;
                     if (selected.Count > 65536) throw new UnsupportedCompile("Native input file-count budget exceeded at " + root);
                 }
             }
         }
-        long total = 0;
-        var contents = new HashSet<string>(StringComparer.Ordinal);
         string standardHeaders = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(config.RealCompiler)!, "../../..", "include")).TrimEnd('\\') + "\\";
         var compileSources = batch.Select(x => x.Source).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (producer is not null) compileSources.Add(Path.GetFullPath(producer.Source, cwd));
-        return selected.Order(StringComparer.OrdinalIgnoreCase).Select(path =>
+        using var hashing = BuildTiming.Measure("native.snapshot.hash");
+        string[] ordered = selected.Keys.Order(StringComparer.OrdinalIgnoreCase).ToArray();
+        var inputs = new InputFile[ordered.Length];
+        var index = NativeHashIndex.Load(Path.GetFullPath(config.StateDirectory));
+        long total = 0;
+        var contents = new HashSet<string>(StringComparer.Ordinal);
+        bool overBudget = false;
+        try
         {
-            var metadata = new FileInfo(path);
-            bool cpp = compileSources.Contains(path) || SourceExtensions.Contains(Path.GetExtension(path)) ||
-                Path.GetExtension(path).Length == 0 && path.StartsWith(standardHeaders, StringComparison.OrdinalIgnoreCase);
-            if (!cpp || metadata.Length > Wire.FileLimit)
-                return new InputFile(MappedCompile.InputPath(path), metadata.Length, "", metadata.LastWriteTimeUtc.Ticks, Deferred: true);
-            using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            string hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(input));
-            long time = File.GetLastWriteTimeUtc(path).Ticks;
-            if (contents.Add(hash + "-" + time)) total += input.Length;
-            if (total > Wire.NativeTotalLimit) throw new UnsupportedCompile("Native input byte budget exceeded");
-            return new InputFile(MappedCompile.InputPath(path), input.Length, hash, time);
-        }).ToArray();
+            Parallel.For(0, ordered.Length, new ParallelOptions { MaxDegreeOfParallelism = HashConcurrency }, (i, loop) =>
+            {
+                string path = ordered[i];
+                FileInfo metadata = selected[path];
+                bool cpp = compileSources.Contains(path) || SourceExtensions.Contains(metadata.Extension) ||
+                    metadata.Extension.Length == 0 && path.StartsWith(standardHeaders, StringComparison.OrdinalIgnoreCase);
+                if (!cpp || metadata.Length > Wire.FileLimit)
+                {
+                    inputs[i] = new InputFile(MappedCompile.InputPath(path), metadata.Length, "", metadata.LastWriteTimeUtc.Ticks, Deferred: true);
+                    return;
+                }
+                long length = metadata.Length, time = metadata.LastWriteTimeUtc.Ticks;
+                if (!index.TryGet(path, length, time, out string hash))
+                {
+                    using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(input));
+                    length = input.Length;
+                    long observed = File.GetLastWriteTimeUtc(path).Ticks;
+                    if (observed == time && length == metadata.Length) index.Add(path, length, time, hash);
+                    time = observed;
+                }
+                lock (contents)
+                {
+                    if (contents.Add(hash + "-" + time)) total += length;
+                    if (total > Wire.NativeTotalLimit) { overBudget = true; loop.Stop(); }
+                }
+                inputs[i] = new InputFile(MappedCompile.InputPath(path), length, hash, time);
+            });
+        }
+        catch (AggregateException e) when (e.InnerExceptions.Count > 0)
+        { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerExceptions[0]).Throw(); }
+        if (overBudget) throw new UnsupportedCompile("Native input byte budget exceeded");
+        index.Save();
+        return inputs;
+    }
+    private static void RejectReparse(FileSystemInfo entry)
+    {
+        if ((entry.Attributes & FileAttributes.ReparsePoint) != 0) throw new Rejected("Reparse points are not allowed: " + entry.FullName);
     }
     public void Dispose() => ClientCache.Dispose();
 }

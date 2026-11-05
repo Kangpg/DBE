@@ -635,6 +635,76 @@ static class SelfTest
         _ = snapshot.Manifest(invocation, Guid.NewGuid().ToString("N"), new string('a', 64));
         File.SetLastWriteTimeUtc(header, File.GetLastWriteTimeUtc(header).AddSeconds(2));
         Check(!snapshot.Unchanged(), "native-input-timestamp-change-is-semantic");
+        NativeHashIndexContracts(Directory.CreateDirectory(Path.Combine(directory, "hash-index")).FullName);
+        // Automatic scope accepts what the project itself declares, keeps the
+        // whole-drive refusal, and does not list compiler outputs as inputs.
+        string declaredRoot = Directory.CreateDirectory(Path.Combine(directory, "declared-elsewhere")).FullName;
+        File.WriteAllText(Path.Combine(declaredRoot, "declared.h"), "#define DECLARED 1\n");
+        File.WriteAllText(Path.Combine(declaredRoot, "stale.obj"), "x");
+        var auto = config with { NativeAutoScope = true, NativeInputRoots = [], NativeToolchainRoots = [], StateDirectory = Path.Combine(directory, "auto-state") };
+        var autoInvocation = invocation with { PreprocessOptions = ["/utf-8", "/X", "/I" + declaredRoot] };
+        InputFile[] autoFiles = new NativeBuild(auto, [autoInvocation]).Manifest(autoInvocation, Guid.NewGuid().ToString("N"), new string('a', 64)).Files!;
+        Check(autoFiles.Any(file => file.Path == MappedCompile.InputPath(Path.Combine(declaredRoot, "declared.h"))), "automatic-scope-accepts-project-declared-include-root");
+        Check(!autoFiles.Any(file => file.Path.EndsWith("stale.obj", StringComparison.OrdinalIgnoreCase)), "native-inventory-omits-compiler-outputs");
+        var wholeDrive = autoInvocation with { PreprocessOptions = ["/utf-8", "/X", "/I" + Path.GetPathRoot(directory)] };
+        try { _ = new NativeBuild(auto, [wholeDrive]).Manifest(wholeDrive, Guid.NewGuid().ToString("N"), new string('a', 64)); throw new Exception("Whole drive accepted"); }
+        catch (UnsupportedCompile) { Check(true, "automatic-scope-still-refuses-a-whole-drive"); }
+        // Repeated Worker failures, or an inventory that cannot be described, end
+        // remote placement for this CL Task; a completion resets the count.
+        var circuit = new NativeBuild(config, [invocation]);
+        circuit.NoteRemoteFallback(); circuit.NoteRemoteFallback(); circuit.NoteRemoteCompleted(); circuit.NoteRemoteFallback(); circuit.NoteRemoteFallback();
+        Check(circuit.RemoteViable, "remote-completion-resets-the-failure-count");
+        circuit.NoteRemoteFallback();
+        Check(!circuit.RemoteViable, "repeated-remote-failures-end-remote-placement");
+        var unscoped = invocation with { PreprocessOptions = ["/utf-8", "/X", "/I" + declaredRoot] };
+        var refused = new NativeBuild(config, [unscoped]);
+        try { _ = refused.Manifest(unscoped, Guid.NewGuid().ToString("N"), new string('a', 64)); throw new Exception("Explicit scope accepted an outside root"); }
+        catch (UnsupportedCompile) { Check(!refused.RemoteViable, "unavailable-inventory-ends-remote-placement"); }
+        byte[] Bytes(string text) => System.Text.Encoding.UTF8.GetBytes(text);
+        Check(MsBuildAdapter.IsWorkerEnvironmentFailure(Bytes("a.cpp(1): fatal error C1083: cannot open")) && MsBuildAdapter.IsWorkerEnvironmentFailure(Bytes("fatal error C1060: 힙 공간")), "worker-environment-failures-go-to-the-local-compiler");
+        Check(!MsBuildAdapter.IsWorkerEnvironmentFailure(Bytes("a.cpp(1): error C2065: undeclared")) && !MsBuildAdapter.IsWorkerEnvironmentFailure(Bytes("a.cpp(1): fatal error C1189: #error")), "source-errors-remain-remote-diagnostics");
+        // A remembered hash must not outlive the metadata it was recorded under.
+        string reused = Path.Combine(project, "reused.h");
+        File.WriteAllText(reused, "#define REUSED 1\n");
+        File.SetLastWriteTimeUtc(reused, DateTime.UtcNow.AddMinutes(-5));
+        string Hashed() => new NativeBuild(config, [invocation]).Manifest(invocation, Guid.NewGuid().ToString("N"), new string('a', 64))
+            .Files!.Single(file => file.Path == MappedCompile.InputPath(reused)).Sha256;
+        string original = Hashed();
+        Check(original == Hashed(), "native-snapshot-reuses-the-durable-hash-index");
+        DateTime recorded = File.GetLastWriteTimeUtc(reused);
+        File.WriteAllText(reused, "#define REUSED 2\n");
+        File.SetLastWriteTimeUtc(reused, recorded);
+        string sameMetadata = Hashed();
+        Check(sameMetadata == original, "native-hash-index-is-keyed-by-length-and-timestamp");
+        File.SetLastWriteTimeUtc(reused, recorded.AddSeconds(2));
+        Check(Hashed() == Wire.HashFile(reused) && Hashed() != original, "native-hash-index-rehashes-after-timestamp-change");
+        File.SetLastWriteTimeUtc(reused, recorded);
+        File.WriteAllText(reused, "#define REUSED 22\n");
+        File.SetLastWriteTimeUtc(reused, recorded);
+        Check(Hashed() == Wire.HashFile(reused), "native-hash-index-rehashes-after-length-change");
+    }
+    private static void NativeHashIndexContracts(string state)
+    {
+        string file = Path.Combine(state, "native-hash-index.txt");
+        string input = Path.GetFullPath(Path.Combine(state, "input.h"));
+        string hash = new string('b', 64);
+        long old = DateTime.UtcNow.AddMinutes(-5).Ticks;
+        var index = NativeHashIndex.Load(state);
+        index.Add(input, 7, old, hash);
+        index.Add(input + ".racy", 7, DateTime.UtcNow.Ticks, hash);
+        index.Save();
+        var reloaded = NativeHashIndex.Load(state);
+        Check(reloaded.TryGet(input, 7, old, out string found) && found == hash, "hash-index-survives-process-boundary");
+        Check(!reloaded.TryGet(input + ".racy", 7, DateTime.UtcNow.Ticks, out _), "hash-index-skips-just-modified-files");
+        Check(!reloaded.TryGet(input, 8, old, out _) && !reloaded.TryGet(input, 7, old + 1, out _), "hash-index-misses-on-any-metadata-change");
+        var concurrent = NativeHashIndex.Load(state);
+        var other = NativeHashIndex.Load(state);
+        concurrent.Add(input + ".a", 1, old, hash); other.Add(input + ".b", 2, old, hash);
+        concurrent.Save(); other.Save();
+        reloaded = NativeHashIndex.Load(state);
+        Check(reloaded.TryGet(input + ".a", 1, old, out _) && reloaded.TryGet(input + ".b", 2, old, out _), "hash-index-merges-other-process-entries");
+        File.WriteAllText(file, "not\ta\tvalid\tentry\n" + old + "\t7\t" + hash + "\trelative.h\n" + "\0\0\0");
+        Check(!NativeHashIndex.Load(state).TryGet("relative.h", 7, old, out _), "malformed-hash-index-means-hash-again");
     }
 
     private static async Task Eventually(Func<bool> predicate, CancellationToken token)

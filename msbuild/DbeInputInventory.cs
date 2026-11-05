@@ -12,6 +12,13 @@ using Microsoft.Build.Utilities;
 // a previously absent __has_include input. No source contents are modified.
 public sealed class DbeInputInventory : Task
 {
+    // A solution directory usually also holds other projects' outputs, which appear
+    // during the build under many names. Counting them would make the next unchanged
+    // build look like an include membership change, so only files that could newly
+    // satisfy an #include count. MSBuild's tracking still covers every file actually read.
+    private static readonly HashSet<string> IncludeCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        { "", ".h", ".hh", ".hpp", ".hxx", ".h++", ".inl", ".inc", ".ipp", ".tpp", ".tcc", ".def", ".c", ".cc", ".cpp", ".cxx" };
+    private static readonly HashSet<string> BuildDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".git", ".svn", ".vs", "ipch" };
     [Required] public string ProjectDirectory { get; set; }
     [Required] public string StateFile { get; set; }
     public ITaskItem[] Sources { get; set; }
@@ -101,6 +108,7 @@ public sealed class DbeInputInventory : Task
                 if (!String.IsNullOrWhiteSpace(root)) roots.Add(Full(root.Trim().Trim('"')));
             // An observed absolute include may live outside declared search
             // roots. Its siblings can affect subsequent quoted includes too.
+            var observedRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (!String.IsNullOrEmpty(TrackerDirectory) && Directory.Exists(Full(TrackerDirectory)))
                 foreach (var log in Directory.GetFiles(Full(TrackerDirectory), "dbe-remote-cl.read.*.tlog"))
                     foreach (var line in File.ReadLines(log, Encoding.Unicode)) {
@@ -112,7 +120,7 @@ public sealed class DbeInputInventory : Task
                             trackedExclusions.Add(Path.GetDirectoryName(line));
                         else if (File.Exists(line) && !excluded(line)
                             && !observedExclusions.Any(x => line.StartsWith(x, StringComparison.OrdinalIgnoreCase)))
-                            roots.Add(Path.GetDirectoryName(line));
+                            observedRoots.Add(Path.GetDirectoryName(line));
                     }
             TrackedExclusions = trackedExclusions.ToArray();
             var entries = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -122,20 +130,43 @@ public sealed class DbeInputInventory : Task
             {
                 directory = Full(directory);
                 if (excluded(directory) || !visited.Add(directory)) return;
-                if (!Directory.Exists(directory)) { entries.Add("missing:" + directory); return; }
+                // Only a file can satisfy an #include. A directory appearing empty
+                // during the build changes nothing; a file inside it is still counted.
+                if (!Directory.Exists(directory)) return;
                 if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
                     throw new IOException("Include directory is a reparse point: " + directory);
-                foreach (var file in Directory.EnumerateFiles(directory)) entries.Add("file:" + file.ToUpperInvariant());
-                foreach (var child in Directory.EnumerateDirectories(directory)) visit(child);
+                foreach (var file in Directory.EnumerateFiles(directory))
+                    if (IncludeCandidates.Contains(Path.GetExtension(file)))
+                        entries.Add("file:" + file.ToUpperInvariant());
+                foreach (var child in Directory.EnumerateDirectories(directory))
+                    if (!BuildDirectories.Contains(Path.GetFileName(child)) && !child.EndsWith(".tlog", StringComparison.OrdinalIgnoreCase)) visit(child);
             };
             foreach (var root in roots.OrderBy(x => x.Length)) visit(root);
             using (var sha = SHA256.Create())
             {
                 foreach (var file in RuntimeInputs ?? new string[0])
                     using (var stream = File.OpenRead(Full(file))) entries.Add("runtime:" + Full(file) + ":" + BitConverter.ToString(sha.ComputeHash(stream)));
-                Fingerprint = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(String.Join("\n", entries))));
+                Func<IEnumerable<string>, string> digest = lines => BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(String.Join("\n", lines))));
+                var state = new List<string> { digest(entries) };
+                var previous = File.Exists(StateFile) ? File.ReadAllLines(StateFile) : new string[0];
+                Changed = previous.Length == 0 || previous[0].Trim() != state[0];
+                // A directory learned from tracker logs is recorded on first sight, not
+                // treated as a change: the compile that read it already saw its contents.
+                // Once recorded, any later membership change in it is detected.
+                var recorded = previous.Skip(1).Select(x => x.Split('\t')).Where(x => x.Length == 2)
+                    .ToDictionary(x => x[1], x => x[0], StringComparer.OrdinalIgnoreCase);
+                foreach (var root in observedRoots.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                {
+                    // Sibling files only, independent of which other roots were seen.
+                    var siblings = Directory.Exists(root)
+                        ? Directory.EnumerateFiles(root).Where(x => IncludeCandidates.Contains(Path.GetExtension(x))).Select(x => x.ToUpperInvariant()).OrderBy(x => x, StringComparer.Ordinal)
+                        : Enumerable.Empty<string>();
+                    string value = digest(siblings), known;
+                    if (recorded.TryGetValue(root, out known) && known != value) Changed = true;
+                    state.Add(value + "\t" + root);
+                }
+                Fingerprint = String.Join(";", state);
             }
-            Changed = !File.Exists(StateFile) || File.ReadAllText(StateFile).Trim() != Fingerprint;
             if (Changed && NativeLocal && !String.IsNullOrEmpty(TrackerDirectory)) InvalidatedObjects = LocalObjects();
         }
         catch (Exception error)

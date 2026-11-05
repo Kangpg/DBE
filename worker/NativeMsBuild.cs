@@ -4,6 +4,14 @@ namespace Dbe;
 
 static partial class MsBuildAdapter
 {
+    // These fatal errors describe the Worker's snapshot or fixed compiler budget,
+    // not the source: a missing file outside the declared inventory (C1083), or
+    // heap and PCH limits (C1060, C1076, C1063, C1002, C3859) the caller's own
+    // compiler does not have. Any real source problem recurs in the local run.
+    [System.Text.RegularExpressions.GeneratedRegex(@"fatal error C(1083|1060|1076|1063|1002|3859)\b", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex WorkerEnvironmentFailure();
+    internal static bool IsWorkerEnvironmentFailure(byte[] diagnostics) =>
+        WorkerEnvironmentFailure().IsMatch(System.Text.Encoding.Latin1.GetString(diagnostics));
     private static async Task<int> RunNative(AdapterConfig config, string root, ClInvocation[] sources, CancellationToken token,
         HostScheduler scheduler, HostScheduler.Lease placement, Lazy<Compiler> compiler, NativeBuild inputs)
     {
@@ -27,6 +35,7 @@ static partial class MsBuildAdapter
         async Task<int> FallbackNative(string reason)
         {
             foreach (var source in sources) Console.WriteLine("DBE: native-local-fallback " + source.Source + ": " + reason);
+            inputs.NoteRemoteFallback();
             placement.Dispose();
             int parallelism = Math.Min(sources.Length, scheduler.Policy.LocalBatchSlots);
             if (scheduler.Policy.PreserveLocalParallelism) parallelism = Math.Min(parallelism, invocation.NativeParallelism());
@@ -87,11 +96,16 @@ static partial class MsBuildAdapter
             { return await FallbackNative("Native requested input unavailable: " + e.Message); }
             Console.WriteLine("DBE: native additional compile inputs " + reply.RequiredInputs!.Length);
         }
-        foreach (string name in new[] { "stdout", "stderr" })
+        byte[] Diagnostics(string name)
         {
             string path = Path.Combine(output, name + ".bin");
-            if (File.Exists(path)) (name == "stdout" ? Console.OpenStandardOutput() : Console.OpenStandardError()).Write(File.ReadAllBytes(path));
+            return File.Exists(path) ? File.ReadAllBytes(path) : [];
         }
+        // Withhold the Worker's text: the initiating compiler is the authority here.
+        if (reply.Status == "compile-error" && (IsWorkerEnvironmentFailure(Diagnostics("stdout")) || IsWorkerEnvironmentFailure(Diagnostics("stderr"))))
+            return await FallbackNative("Worker environment could not compile this source");
+        Console.OpenStandardOutput().Write(Diagnostics("stdout"));
+        Console.OpenStandardError().Write(Diagnostics("stderr"));
         if (reply.Status == "compile-error")
         {
             foreach (var source in sources) DeleteObject(source.Object);
@@ -99,6 +113,7 @@ static partial class MsBuildAdapter
             return unchecked((int)(reply.ExitCode ?? 1));
         }
         if (reply.Status != "completed") return await FallbackNative("Native Worker returned " + reply.Status + ": " + reply.Message);
+        inputs.NoteRemoteCompleted();
         string key = Wire.Hash(JsonSerializer.SerializeToUtf8Bytes(manifest with { Attempt = "" }, Wire.Json));
         for (int i = 0; i < sources.Length; i++)
         {

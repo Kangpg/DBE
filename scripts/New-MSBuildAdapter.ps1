@@ -12,6 +12,7 @@ param(
     [ValidateRange(1,4)][int]$NativeBatchFiles=1,
     [string[]]$NativeInputRoots=@(),
     [string[]]$NativeToolchainRoots=@(),
+    [switch]$NativeAutoScope,
     [ValidateSet('2022','2026')][string]$VisualStudio='2022'
 )
 $ErrorActionPreference='Stop'
@@ -23,7 +24,8 @@ if(Test-Path -LiteralPath $Destination) { throw 'Adapter destination must be new
 if($Mode -eq 'Hybrid' -and !$HostPolicy){throw 'Hybrid mode requires the shared HostPolicy file.'}
 if($NativeBatchFiles -gt 1 -and !$NativeInputs){throw 'Native batches require NativeInputs.'}
 if($NativeInputs -and $Mode -ne 'Hybrid'){throw 'Native input distribution requires Hybrid mode.'}
-if($NativeInputs -and !$NativeInputRoots.Count){throw 'Native inputs require explicit project and SDK input roots.'}
+if($NativeAutoScope -and !$NativeInputs){throw 'Automatic input scope requires NativeInputs.'}
+if($NativeInputs -and !$NativeAutoScope -and !$NativeInputRoots.Count){throw 'Native inputs require explicit project and SDK input roots, or NativeAutoScope.'}
 if(!$PublishDirectory) { $PublishDirectory=(& (Join-Path $PSScriptRoot 'Build-Worker.ps1') -SelfContained).Directory }
 New-Item -ItemType Directory -Path $Destination | Out-Null
 Copy-Item -Path (Join-Path $PublishDirectory '*') -Destination $Destination -Recurse
@@ -40,6 +42,7 @@ $state=if([IO.Path]::IsPathRooted($StateDirectory)){[IO.Path]::GetFullPath($Stat
 $config=[ordered]@{realCompiler=$tools.Compiler;clientConfig=(Resolve-Path -LiteralPath $ClientConfig).Path;stateDirectory=$state;mode=$Mode;allowCompilerMismatch=$AllowCompilerMismatch.IsPresent}
 if($NativeBatchFiles -gt 1){$config.nativeBatchFiles=$NativeBatchFiles}
 if($NativeInputs){$config.nativeInputs=$true;$config.nativeInputRoots=@($NativeInputRoots|ForEach-Object {[IO.Path]::GetFullPath($_)})}
+if($NativeAutoScope){$config.nativeAutoScope=$true}
 if($NativeInputs -and $NativeToolchainRoots.Count){$config.nativeToolchainRoots=@($NativeToolchainRoots|ForEach-Object {[IO.Path]::GetFullPath($_)})}
 if($HostPolicy){$config.hostPolicy=(Resolve-Path -LiteralPath $HostPolicy).Path}
 if($AdditionalClients.Count){
@@ -52,10 +55,11 @@ Copy-Item -LiteralPath (Join-Path $root 'msbuild\DBE.Remote.targets') -Destinati
 Copy-Item -LiteralPath (Join-Path $root 'msbuild\DbeInputInventory.cs') -Destination $Destination
 @{msbuild=$tools.MSBuild;compiler=$tools.Compiler}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Destination 'build-tools.json') -Encoding UTF8
 $compilerProps=[xml]'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><DBEConfiguredCompiler /></PropertyGroup></Project>'
-$compilerProps.Project.PropertyGroup.DBEConfiguredCompiler=$tools.Compiler
+$compilerProps.Project.PropertyGroup.DBEConfiguredCompiler=[string]$tools.Compiler
 if($NativeInputs){
     $element=$compilerProps.CreateElement('DBENativeInputRoots',$compilerProps.DocumentElement.NamespaceURI)
     $element.InnerText=($config.nativeInputRoots -join ';');[void]$compilerProps.Project.PropertyGroup.AppendChild($element)
+    if($NativeAutoScope){$element=$compilerProps.CreateElement('DBENativeAutoScope',$compilerProps.DocumentElement.NamespaceURI);$element.InnerText='true';[void]$compilerProps.Project.PropertyGroup.AppendChild($element)}
 }
 foreach($entry in @{DBEStateDirectory=$state;DBELeaseDirectory=$(if($HostPolicy){Join-Path (Split-Path (Resolve-Path $HostPolicy).Path -Parent) 'leases'}else{Join-Path (Resolve-Path $Destination).Path 'unused-leases'})}.GetEnumerator()){
     $element=$compilerProps.CreateElement($entry.Key,$compilerProps.DocumentElement.NamespaceURI);$element.InnerText=$entry.Value;[void]$compilerProps.Project.PropertyGroup.AppendChild($element)
