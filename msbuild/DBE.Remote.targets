@@ -50,6 +50,22 @@
     </ItemGroup>
     <MSBuild Projects="@(DBEAheadProject)" BuildInParallel="true" ContinueOnError="true" />
   </Target>
+  <UsingTask TaskName="DbeSolutionAhead" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <Task><Code Type="Class" Source="$(DBEAdapterDirectory)\DbeSolutionAhead.cs" /></Task>
+  </UsingTask>
+  <!-- The IDE builds one project at a time, so it cannot use the reference call above.
+       Only a whole-solution Build recorded by the DBE extension compiles ahead. A project
+       that is not connected to DBE has no target to run here and is skipped. -->
+  <Target Name="DBECompileAheadBody" DependsOnTargets="PrepareForBuild;ClCompile" />
+  <Target Name="DBEIdeCompileAhead" BeforeTargets="PrepareForBuild"
+          Condition="'$(DBEEnabled)' == 'true' And '$(DBEHybrid)' == 'true' And '$(DBECompileAhead)' != 'false' And '$(DBECompileAheadInstance)' != 'true' And '$(BuildingInsideVisualStudio)' == 'true' And '$(SolutionPath)' != '' And Exists('$(LOCALAPPDATA)\DBE\ide-builds')">
+    <DbeSolutionAhead Solution="$(SolutionPath)" Configurations="$(CurrentSolutionConfigurationContents)" MarkerDirectory="$(LOCALAPPDATA)\DBE\ide-builds">
+      <Output TaskParameter="Projects" ItemName="DBESolutionAheadProject" />
+      <Output TaskParameter="Owner" PropertyName="DBESolutionAheadOwner" />
+    </DbeSolutionAhead>
+    <MSBuild Condition="'@(DBESolutionAheadProject)' != ''" Projects="@(DBESolutionAheadProject)" Targets="DBECompileAheadBody" SkipNonexistentTargets="true" BuildInParallel="true" ContinueOnError="true" />
+    <DbeSolutionAhead Condition="'$(DBESolutionAheadOwner)' == 'true'" Solution="$(SolutionPath)" MarkerDirectory="$(LOCALAPPDATA)\DBE\ide-builds" Complete="true" />
+  </Target>
   <!-- CL runs below the launcher. Consolidate its PID-specific child logs
        into a stable canonical log so the next MP pass can clean prior outputs. -->
   <ItemGroup Condition="'$(DBEEnabled)' == 'true' And '$(DBELocal)' == 'true'">
@@ -72,7 +88,6 @@
     <SetEnv Condition="'$(DBECompileAheadInstance)' != 'true'" Name="DBE_COMPILE_AHEAD" Value="0" Prefix="false" />
     <Error Condition="!Exists('$(DBEAdapterDirectory)\dbe-remote-cl.exe') Or !Exists('$(DBEAdapterDirectory)\msbuild.json')" Text="DBEAdapterDirectory must contain the configured MSBuild adapter." />
     <Error Condition="'$(Platform)' != 'x64'" Text="DBE remote adapter currently requires Platform=x64." />
-    <Error Condition="'$(PlatformToolset)' != 'v143'" Text="DBE remote adapter currently requires the explicitly configured v143 toolchain." />
     <Error Condition="'$(DBEConfiguredCompiler)' == '' Or '$(DBESelectedCompiler)' != '$(DBEConfiguredCompiler)'" Text="The project-selected compiler differs from this adapter configuration. Create an adapter for the selected toolchain." />
     <DbeInputInventory Condition="'$(DBEIncrementalTracking)' == 'true'" ProjectDirectory="$(MSBuildProjectDirectory)"
         NativeLocal="$([System.String]::Equals('$(DBELocal)', 'true'))"

@@ -19,6 +19,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Dbe.VisualStudio
 {
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
+    [ProvideAutoLoad(UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [Guid("f55fa185-f0aa-4913-9cfb-9a64b547b9f1")]
     public sealed class DbePackage : AsyncPackage, IVsUpdateSolutionEvents
@@ -31,11 +32,53 @@ namespace Dbe.VisualStudio
         private System.Diagnostics.Process running;
         private bool starting;
         private readonly object gate = new object();
+        private BuildEvents buildEvents; // COM events stop when this reference is collected.
+
+        // MSBuild is never told whether VS is building the solution or one project, and
+        // compiling a whole solution for a one-project build would be wrong. This marker
+        // tells DBE's targets (DbeSolutionAhead.cs) that a whole-solution Build began.
+        private void OnBuildBegin(vsBuildScope scope, vsBuildAction action)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ClearBuildMarker();
+            if(scope != vsBuildScope.vsBuildScopeSolution || action != vsBuildAction.vsBuildActionBuild) return;
+            try
+            {
+                string marker = BuildMarker();
+                Directory.CreateDirectory(Path.GetDirectoryName(marker));
+                string pending = marker + ".pending";
+                File.WriteAllText(pending, Guid.NewGuid().ToString("N") + " " + System.Diagnostics.Process.GetCurrentProcess().Id);
+                File.Move(pending, marker);
+            }
+            catch(Exception e) when(e is IOException || e is UnauthorizedAccessException) { }
+        }
+        private string BuildMarker()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            using(var sha = System.Security.Cryptography.SHA256.Create())
+                return Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA"), "DBE", "ide-builds",
+                    BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(dte.Solution.FullName).ToUpperInvariant()))).Replace("-", ""));
+        }
+        private void ClearBuildMarker()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                if(string.IsNullOrEmpty(dte.Solution.FullName)) return;
+                string marker = BuildMarker();
+                if(Directory.Exists(Path.GetDirectoryName(marker)))
+                    foreach(string file in Directory.GetFiles(Path.GetDirectoryName(marker), Path.GetFileName(marker) + "*")) File.Delete(file);
+            }
+            catch(Exception e) when(e is IOException || e is UnauthorizedAccessException) { }
+        }
 
         protected override async Task InitializeAsync(CancellationToken token, IProgress<ServiceProgressData> progress)
         {
             await JoinableTaskFactory.SwitchToMainThreadAsync(token);
             dte = (DTE2)await GetServiceAsync(typeof(DTE));
+            buildEvents = dte.Events.BuildEvents;
+            buildEvents.OnBuildBegin += OnBuildBegin;
+            buildEvents.OnBuildDone += (_, __) => { ThreadHelper.ThrowIfNotOnUIThread(); ClearBuildMarker(); };
             var output = (IVsOutputWindow)await GetServiceAsync(typeof(SVsOutputWindow));
             Guid id = Commands;ErrorHandler.ThrowOnFailure(output.CreatePane(ref id, "DBE Build", 1, 0));
             ErrorHandler.ThrowOnFailure(output.GetPane(ref id, out pane));

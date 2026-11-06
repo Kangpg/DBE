@@ -2,13 +2,13 @@
 
 Windows MSVC C++ 빌드를 요청 PC와 여러 Worker에 배정하는 실험 프로젝트. 네이티브 wrapper, MSBuild Adapter, TLS Worker와 Visual Studio 확장 소스를 포함한다.
 
-현재 개발 버전은 **0.4.0**이다. [릴리스 노트](CHANGELOG.md)에 문제·원인·수정과 검증·남은 항목을 기록한다. 제품 버전은 `VERSION`이 기준이며 통신 프로토콜 번호와 구분한다.
+현재 개발 버전은 **0.5.0**이다. [릴리스 노트](CHANGELOG.md)에 문제·원인·수정과 검증·남은 항목을 기록한다. 제품 버전은 `VERSION`이 기준이며 통신 프로토콜 번호와 구분한다.
 
-**0.4.0에서 Hybrid 전체 빌드가 처음으로 순정보다 빨라졌다.** 현재 프로젝트의 명령줄 프로젝트 빌드를 순서를 바꿔 2쌍 측정한 평균은 순정 258.3초, Hybrid 230.1초(Worker 1대)다. 일반 앱과 VS를 유지한 관측이며 안정적인 가속률로 일반화하지 않는다. 일반 VS 솔루션 빌드는 아직 이 가속을 받지 않고, 최대 commit이 약 12GiB 늘며 무변경 빌드는 약 5초 길다. [측정 조건·비용·남은 작업](docs/benchmark.md)
+**0.4.0에서 Hybrid 전체 빌드가 처음으로 순정보다 빨라졌다.** 현재 프로젝트의 명령줄 프로젝트 빌드를 순서를 바꿔 2쌍 측정한 평균은 순정 258.3초, Hybrid 230.1초(Worker 1대)다. 일반 앱과 VS를 유지한 관측이며 안정적인 가속률로 일반화하지 않는다. 최대 commit이 약 12GiB 늘고 무변경 빌드는 약 5초 길다. 0.5.0은 VS 솔루션 Build의 compile-ahead를 합성 프로젝트로 검증했으며 현재 프로젝트의 VS 시간은 측정하지 않았다. [측정 조건·비용·남은 작업](docs/benchmark.md)
 
 - [설치](docs/installation.md): 소스 빌드, Worker 패키지, VSIX.
 - [연결](docs/connection.md): 인증 pair, 여러 Worker, 솔루션 설정.
-- [사용법](docs/usage.md): 프로젝트 파일 수정 없이 일반 VS Build에 연결, 프로젝트/솔루션 빌드, 취소, 로그.
+- [사용법](docs/usage.md): `Enable-DbeBuild.ps1`로 프로젝트별 설정 없이 전체 연결, 일반 VS Build, 프로젝트/솔루션 빌드, 취소, 로그.
 - [구조와 한계](docs/design.md), [이슈 추적](docs/issues.md), [개발 지침](AGENTS.md).
 - [원본 소스·경로·원격 PCH 실험](docs/native-pch.md): v6 입력/PCH 재사용과 v5 경로 보존의 검증 범위. 기존 v3 결과와 최신 v6 검증을 구분한다.
 

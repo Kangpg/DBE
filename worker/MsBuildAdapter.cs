@@ -26,6 +26,10 @@ static partial class MsBuildAdapter
     // results are returned normally and do not reach this path.
     internal static async Task<int> RunOrOriginal(string tool, Func<Task<int>> distributed, CancellationToken token)
     {
+        // Inside VS this names an inherited pipe handle the supervised tool does not
+        // receive; MSVC would write its diagnostics there and lose them. Without it the
+        // tool writes to the captured streams, which this process forwards to MSBuild.
+        Environment.SetEnvironmentVariable("VS_UNICODE_OUTPUT", null);
         try { return CompilerOutput.Finish(await distributed()); }
         catch (Exception e) when (!token.IsCancellationRequested && e is Rejected or IOException or UnauthorizedAccessException or JsonException)
         {
@@ -65,6 +69,7 @@ static partial class MsBuildAdapter
         using var scheduler = config.Mode == "Hybrid" ? new HostScheduler(config.HostPolicy ?? throw new Rejected("Hybrid requires a shared host policy"), config.Clients) : null;
         string raw = ClInvocation.RawTail();
         if (config.Mode == "Local") throw new Rejected("Local mode requires the native launcher; create a fresh Local adapter");
+        if (CompilerOutput.Deferred && scheduler?.AheadMustYieldNow() == true) return 1;
         ClInvocation[] batch;
         try
         {

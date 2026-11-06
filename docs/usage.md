@@ -2,6 +2,26 @@
 
 [설치](installation.md)와 [연결](connection.md) 후 일반 VS Build 또는 확장의 DBE 명령을 사용할 수 있다.
 
+### 모든 프로젝트 연결
+
+프로젝트별 설정 없이 이 Windows 사용자의 MSBuild C++ 빌드에 연결한다. Windows PowerShell 5.1과 PowerShell 7에서 동작한다. `-Apply` 없이 실행하면 계획만 출력하고 아무것도 쓰지 않는다.
+
+```powershell
+$build = .\scripts\Build-Worker.ps1 -SelfContained
+.\scripts\Enable-DbeBuild.ps1 -PublishDirectory $build.Directory          # 계획 확인
+.\scripts\Enable-DbeBuild.ps1 -PublishDirectory $build.Directory -Apply   # 적용
+```
+
+연결 파일이 앱 전용 폴더처럼 IDE에서 보이지 않는 곳에 있으면 `-ImportConnection <연결 폴더>`를 함께 지정한다. 인증서·요청자 정보·Worker 설정만 `%LOCALAPPDATA%\DBE\connections`로 복사하며 개인 키가 포함된다.
+
+연결한 Worker의 컴파일러 식별값과 일치하는 x64 Hostx64 컴파일러를 고른 프로젝트만 DBE로 빌드한다. 그 밖의 프로젝트와 구성은 순정 빌드다. 응답하지 않는 Worker는 제외하고 계획에 표시하므로 Worker를 복구한 뒤 다시 실행한다.
+
+- 한 번만 끄기: 환경 변수 `DBE_DISABLE=1`
+- IDE 빌드에만 적용: `-IdeOnly`
+- 해제: `.\scripts\Enable-DbeBuild.ps1 -Disable -Apply`. 등록을 백업하고 제거한다. 빌드 중인 IDE는 다시 시작하지 않아도 되지만 이미 불러온 솔루션에는 다시 열 때 반영된다.
+
+프로젝트 사이 컴파일을 겹치는 compile-ahead는 Hybrid의 명령줄 빌드와, DBE VSIX가 설치된 VS의 **솔루션 Build**에 적용된다. 프로젝트 하나 Build와 Rebuild는 기존 순서로 빌드한다. 끄려면 `/p:DBECompileAhead=false`를 쓰거나 환경 변수 `DBECompileAhead=false`를 설정한다. 먼저 시도한 컴파일이 실패해도 표시하지 않고, 일반 Build가 순서대로 다시 컴파일해 진짜 오류를 보고한다.
+
 ### 일반 VS 빌드
 
 Windows 사용자 계정의 일반 PowerShell 7에서 대상 솔루션을 한 번 등록한다. 해당 VS 버전에서 만든 새 Local 또는 Hybrid adapter를 사용한다. VS 2026에서 v143을 사용하는 경우 adapter 생성 시 `-VisualStudio 2026`을 지정한다.

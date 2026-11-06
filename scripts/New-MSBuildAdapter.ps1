@@ -13,13 +13,19 @@ param(
     [string[]]$NativeInputRoots=@(),
     [string[]]$NativeToolchainRoots=@(),
     [switch]$NativeAutoScope,
-    [ValidateSet('2022','2026')][string]$VisualStudio='2022'
+    [ValidateSet('2022','2026')][string]$VisualStudio='2022',
+    [string]$Compiler
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $root=Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'Toolchain.ps1')
-$tools=Get-DbeToolchain $VisualStudio (Join-Path $root 'native\dbe-cl.vcxproj') 'v143'
+if($Compiler){
+    # An explicit compiler selects its own installation: ...\VC\Tools\MSVC\<v>\bin\Hostx64\x64\cl.exe
+    $installation=$Compiler; foreach($i in 1..8){$installation=Split-Path $installation -Parent}
+    $tools=[pscustomobject]@{Root=$installation;MSBuild=(Join-Path $installation 'MSBuild\Current\Bin\MSBuild.exe');Compiler=$Compiler}
+    if(!(Test-Path -LiteralPath $tools.MSBuild)){throw "MSBuild was not found for the selected compiler: $($tools.MSBuild)"}
+} else { $tools=Get-DbeToolchain $VisualStudio (Join-Path $root 'native\dbe-cl.vcxproj') 'v143' }
 $AdditionalClients=@($AdditionalClients|Where-Object {$_})
 if(Test-Path -LiteralPath $Destination) { throw 'Adapter destination must be new.' }
 if($Mode -eq 'Hybrid' -and !$HostPolicy){throw 'Hybrid mode requires the shared HostPolicy file.'}
@@ -54,6 +60,7 @@ $config |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination 'msbuild.json') -Encoding UTF8
 Copy-Item -LiteralPath (Join-Path $root 'msbuild\DBE.Remote.targets') -Destination $Destination
 Copy-Item -LiteralPath (Join-Path $root 'msbuild\DbeInputInventory.cs') -Destination $Destination
+Copy-Item -LiteralPath (Join-Path $root 'msbuild\DbeSolutionAhead.cs') -Destination $Destination
 @{msbuild=$tools.MSBuild;compiler=$tools.Compiler}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Destination 'build-tools.json') -Encoding UTF8
 $compilerProps=[xml]'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><DBEConfiguredCompiler /></PropertyGroup></Project>'
 $compilerProps.Project.PropertyGroup.DBEConfiguredCompiler=[string]$tools.Compiler

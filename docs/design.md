@@ -9,7 +9,8 @@ VSIX → 원래 MSBuild CL Task/추적 → Adapter → local MSVC 또는 TLS Wor
 - 파일: 기본 경로는 준비된 TU와 명시 입력을 TLS로 보내고 object/PDB를 검증 후 원자적으로 반영한다. v6 선택 경로는 허용 범위의 원본 입력, Worker별 hash·mtime blob 캐시와 재사용 입력 트리를 사용한다. 소비자 object를 저장하는 빌드 결과 캐시는 아니다.
 - Local staging: object별 hash/attempt 중첩과 compiler 출력 폴더를 분리한다. 짧은 Job 전용 폴더를 사용하고, 확인된 프로세스 정리 후에만 지운다. 최종 목적지 볼륨에서 rename하여 publication한다.
 - PCH: 기본 Hybrid는 생성이 local이고 원격 사용자는 `/P /Y-`로 펼친다. 선택적인 [v6 원본 입력 경로](native-pch.md)는 원래 `/Yc`·`/Yu`를 실행하고 입력·생성 옵션·로컬 생성 세대가 같은 Worker PCH를 재사용한다. 기준 PDB를 고정하고 소비자별 사본을 사용한다. 같은 local PDB는 하나의 MP Job 안에서 사용한다.
-- Compile-ahead: Hybrid 명령줄 빌드에서 참조를 빌드하는 동안 자기 컴파일을 같은 병렬 MSBuild 호출로 시작한다. 인스턴스는 ProjectReference 없이 PrepareForBuild와 ClCompile만 실행한다. 실패 진단은 버리고 객체를 남기지 않아, 일반 Build가 의존 순서대로 다시 컴파일하고 진짜 오류를 보고한다. 일반 VS 솔루션 빌드는 VS가 순서를 정하므로 적용되지 않는다.
+- Compile-ahead: Hybrid 명령줄 빌드에서 참조를 빌드하는 동안 자기 컴파일을 같은 병렬 MSBuild 호출로 시작한다. 인스턴스는 ProjectReference 없이 PrepareForBuild와 ClCompile만 실행한다. 실패 진단은 버리고 객체를 남기지 않아, 일반 Build가 의존 순서대로 다시 컴파일하고 진짜 오류를 보고한다. VS 솔루션 Build에서는 VSIX가 빌드 범위를 표식으로 알리고, 첫 프로젝트가 `DbeSolutionAhead`로 솔루션을 먼저 컴파일하며 다른 프로젝트는 노드를 양보해 기다린다. 대기에는 항상 끝이 있다. 시작 시 물리 메모리 여유가 부족하면 먼저 컴파일하지 않는다.
+- 전체 연결: `Enable-DbeBuild.ps1`은 Worker 보고 식별값과 일치하는 설치 컴파일러마다 Adapter와 사용자 등록 하나를 만든다. 등록은 digest로 소유를 확인해 외부 파일이나 수정된 파일을 덮어쓰지 않고, 교체할 때 백업한다.
 - 자동 입력 범위: 선택형이며 프로젝트가 선언한 경로를 신뢰한다. 선언되지 않은 경로의 파일을 `__has_include`로 찾는 소스는 원격과 로컬 결과가 다를 수 있다. 일반 include 누락은 `C1083`로 로컬에서 다시 판정한다.
 - 실패 처리: 원격 실패가 이어지면 해당 CL Task는 원래 fan-out의 로컬 Job으로 돌아간다. DBE 상태나 스케줄러를 쓸 수 없으면 원래 도구를 원래 명령으로 실행하고 lease는 보존한다. 입력 해시 인덱스는 MSBuild 추적과 같이 경로·크기·수정 시각을 신뢰하므로, 시각과 크기를 유지한 채 내용만 바뀐 파일은 빌드 사이에 감지하지 못한다.
 - 추적: native MSBuild 추적을 보존하고 include membership 변화를 추가로 확인한다. include가 될 수 있는 확장자의 파일만 세고, 솔루션 폴더는 감시 범위에 넣지 않는다. tlog로 처음 관찰한 폴더는 기록만 하고 이후 변화를 감지한다. runtime 파일은 실제 parent directory 기준으로 제외한다.

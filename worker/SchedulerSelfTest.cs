@@ -27,6 +27,8 @@ static class SchedulerSelfTest
             "local-MP-group-leaves-the-worker-share-unclaimed");
         Check(HostScheduler.LocalGroupSize(9, 16, 1d / 3) == 16 && HostScheduler.LocalGroupSize(10000, 16, 1d / 3) == 256,
             "local-MP-group-stays-within-its-fan-out-bounds");
+        Check(HostScheduler.AheadMustYield(1024UL * 1024 * 1024, 8192) && !HostScheduler.AheadMustYield(16UL * 1024 * 1024 * 1024, 8192),
+            "compile-ahead-yields-only-under-memory-pressure");
         string nativePolicy = Path.Combine(directory, "native-policy", "host.json");
         Directory.CreateDirectory(Path.GetDirectoryName(nativePolicy)!);
         int cores = Environment.ProcessorCount;

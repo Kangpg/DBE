@@ -26,6 +26,12 @@ static class Program
                 }, Wire.Json));
                 return 0;
             }
+            if (args[0] == "compiler-identity" && args.Length == 2)
+            {
+                using var compiler = new Compiler(args[1]);
+                Console.WriteLine(JsonSerializer.Serialize(new { identity = compiler.Identity, version = compiler.Version }, Wire.Json));
+                return 0;
+            }
             if (args[0] == "pair" && args.Length == 3) { Identity.CreatePair(args[1], args[2]); return 0; }
             if (args[0] == "requester" && args.Length == 2) { Identity.CreateRequester(args[1]); return 0; }
             if (args[0] == "scheduler-self-test" && args.Length is 3 or 4) { await SchedulerSelfTest.Run(args[1], args[2], args.Length == 4 ? args[3] : null); return 0; }

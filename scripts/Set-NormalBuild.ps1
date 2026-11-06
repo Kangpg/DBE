@@ -10,7 +10,8 @@ param(
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 function Digest([string]$Value) {
-    [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Value))).ToLowerInvariant()
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try { ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value))) -replace '-','').ToLowerInvariant() } finally { $sha.Dispose() }
 }
 function Literal([string]$Value) {
     # Values enter both an MSBuild expression and an XML attribute. Reject
@@ -18,7 +19,7 @@ function Literal([string]$Value) {
     if ($Value -match '''|[%;*?]|[$@]\(') { throw 'Path contains unsupported MSBuild expression characters.' }
     [Security.SecurityElement]::Escape($Value)
 }
-$solutionPath=[IO.Path]::GetFullPath($Solution, $PWD.Path)
+$solutionPath=[IO.Path]::GetFullPath($(if([IO.Path]::IsPathRooted($Solution)){$Solution}else{Join-Path $PWD.Path $Solution}))
 if ([IO.Path]::GetExtension($solutionPath) -ne '.sln') { throw 'Expected a .sln file.' }
 $id=Digest $solutionPath.ToUpperInvariant()
 $parent=Join-Path $UserExtensionsPath 'Current\Microsoft.Common.targets'
@@ -59,7 +60,7 @@ try {
     $exists=[IO.File]::Exists($file)
     if ($exists) {
         $old=[IO.File]::ReadAllText($file)
-        $parts=$old.Split([char]10,2)
+        $parts=$old.Split([char[]]@([char]10),2)
         if ($parts.Count -ne 2 -or $parts[0] -cne ($marker+(Digest $parts[1])+' -->')) {
             throw 'Existing registration is foreign or modified. Inspect it before updating.'
         }

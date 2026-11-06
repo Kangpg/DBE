@@ -98,8 +98,8 @@ try {
         foreach($w in $wrappers){
             $item=Get-CimInstance Win32_Process -Filter ("Name='cl.exe' and ParentProcessId="+$w.ProcessId)|Select-Object -First 1
             if($item){
-                $p=[Diagnostics.Process]::GetProcessById([int]$item.ProcessId)
-                $null=$p.Handle
+                # A short-lived compiler may exit between the listing and this capture.
+                try { $p=[Diagnostics.Process]::GetProcessById([int]$item.ProcessId);$null=$p.Handle } catch [ArgumentException] { continue }
                 if([math]::Abs(($p.StartTime-$item.CreationDate).TotalMilliseconds) -gt 10){$p.Dispose();throw 'Compiler identity changed'}
                 $child=$p;break
             }

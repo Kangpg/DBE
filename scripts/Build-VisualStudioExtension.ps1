@@ -13,9 +13,10 @@ $nativeLog=Join-Path $output 'host-build.log'
 & $tools.MSBuild (Join-Path $root 'native/dbe-cl.vcxproj') /nologo /nr:false /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64 "/p:DBESource=$root\native\build-host.cpp" /p:TargetName=dbe-build-host "/p:OutDir=$output\" "/p:IntDir=$output\host-obj\" /v:normal *> $nativeLog
 if($LASTEXITCODE -ne 0){Get-Content $nativeLog -Tail 20;throw 'Build host failed'}
 $log=Join-Path $output 'extension-build.log'
-& $tools.MSBuild (Join-Path $root 'vsix/Dbe.VisualStudio.csproj') /nologo /nr:false /p:Configuration=Release "/p:VSInstallDir=$($tools.Root)\" "/p:DBEBuildHostPath=$output\dbe-build-host.exe" /v:normal *> $log
+& $tools.MSBuild (Join-Path $root 'vsix/Dbe.VisualStudio.csproj') /restore /nologo /nr:false /p:Configuration=Release "/p:VSInstallDir=$($tools.Root)\\" "/p:DBEBuildHostPath=$output\dbe-build-host.exe" /v:normal *> $log
 if($LASTEXITCODE -ne 0){Get-Content $log -Tail 30;throw 'VSIX build failed'}
 $sourceManifest=[xml](Get-Content -Raw (Join-Path $root 'vsix/source.extension.vsixmanifest'))
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive=[IO.Compression.ZipFile]::OpenRead((Join-Path $output 'Dbe.VisualStudio.vsix'))
 try {
     $entry=$archive.GetEntry('extension.vsixmanifest')

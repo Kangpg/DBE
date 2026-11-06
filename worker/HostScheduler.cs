@@ -10,7 +10,7 @@ namespace Dbe;
 // commit. WorkerConfig alone owns incoming hard Job memory limits.
 sealed record HostPolicy(int LocalSlots = 4, int RemoteSlots = 2, int LocalMemoryMiB = 4096,
     int ReserveMemoryMiB = 8192, int WaitSeconds = 1200, int CpuBusyPercent = 85, int LinkMemoryMiB = 0, int LocalBatchSlots = 1,
-    int PreprocessMemoryMiB = 0, int LocalBatchMemoryMiB = 0, bool PreserveLocalParallelism = false, int NativeLocalJobs = 4, int LocalFirstFactor = 4);
+    int PreprocessMemoryMiB = 0, int LocalBatchMemoryMiB = 0, bool PreserveLocalParallelism = false, int NativeLocalJobs = 4, int LocalFirstFactor = 4, int AheadMinimumFreeMiB = 8192);
 
 // A shared policy directory is the ownership scope, across adapter processes.
 // Occupied files survive owner death. A released OS lock is NOT cleanup proof.
@@ -39,6 +39,14 @@ sealed class HostScheduler : IDisposable
     // next Job, and a Job that finishes early takes its share of what remains.
     internal static int LocalGroupSize(int pending, int parallelism, double remoteShare) =>
         Math.Clamp(pending - (int)Math.Ceiling(pending * remoteShare), parallelism, parallelism * 16);
+    // Compile-ahead adds concurrent compilers on top of the user's work and is only an
+    // optimization, so it gives way under memory pressure. Native compilation is unaffected.
+    internal static bool AheadMustYield(ulong availableBytes, int minimumFreeMiB) => availableBytes < (ulong)minimumFreeMiB * 1024 * 1024;
+    internal bool AheadMustYieldNow()
+    {
+        var memory = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
+        return !GlobalMemoryStatusEx(ref memory) || AheadMustYield(memory.AvailablePhysical, Policy.AheadMinimumFreeMiB);
+    }
     private ulong lastIdle, lastTotal;
     private long lastSample;
     private double? cpuBusy;
